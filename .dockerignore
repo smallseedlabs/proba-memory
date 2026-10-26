@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+.git
+.github
+.env
+.env.*
+!.env.example
+test-reports
+coverage
+docs
+*.md
+!README.md

@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Run ESLint
+        run: npm run lint
+
+  typecheck:
+    name: Type Check and Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Type-check sources and tests
+        run: npm run typecheck
+      - name: Build all workspaces
+        run: npm run build
+
+  test:
+    name: Unit Tests (in-process adapters)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Run unit tests (fails on any skipped or todo test)
+        run: npm run test:ci
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: test-reports/
+          if-no-files-found: ignore
+
+  integration-test:
+    name: Integration Tests (Postgres + pgvector, Redis)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          # Throwaway credentials of this CI-only service container.
+          POSTGRES_USER: proba
+          POSTGRES_PASSWORD: proba
+          POSTGRES_DB: proba_memory
+        options: >-
+          --health-cmd "pg_isready -U proba -d proba_memory"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    env:
+      NODE_ENV: test
+      LOG_LEVEL: warn
+      # Throwaway credentials of the CI-only service containers above.
+      DATABASE_URL: postgresql://proba:proba@localhost:5432/proba_memory
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Apply migrations to the service database (builds first)
+        run: npm run migrate
+        env:
+          EMBEDDING_DIMENSION: '1024'
+      # Contract suites of every Postgres and Redis adapter, migrations, the stack test (audit stream to
+      # memory to retrieval), the API on Postgres and the decay job on Postgres.
+      - name: Run integration tests (0 skipped)
+        run: npm run test:integration:ci
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-report
+          path: test-reports/
+          if-no-files-found: ignore
+
+  docker:
+    name: Docker Build (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [migrate, memory-api, memory-ingestor, memory-jobs]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          push: false
+          tags: proba-memory-${{ matrix.target }}:ci
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}

@@ -1,0 +1,30 @@
+# Run the services without any external provider: a deterministic local embedder, rule-based extraction
+# and generated development content. NODE_ENV is development, so nothing here can start in production.
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml --profile apps up -d --build
+name: proba-memory-dev
+
+x-local-env: &local-env
+  NODE_ENV: development
+  EMBEDDER: hash
+  LLM_PROVIDER: scripted
+  SOURCES: audit,content
+  HUB_CONTENT_SOURCE: dev
+  MEMORY_API_TOKEN_VERIFIER: static
+  MEMORY_API_RATE_LIMITER: memory
+  # A development token for the local API. Never use it anywhere else.
+  MEMORY_API_STATIC_TOKENS: '[{"token":"local-dev-token","subject":"local-dev","email":"dev@proba.local"}]'
+  MEMORY_API_ADMIN_EMAILS: dev@proba.local
+
+services:
+  migrate:
+    environment:
+      <<: *local-env
+  memory-api:
+    environment:
+      <<: *local-env
+  memory-ingestor:
+    environment:
+      <<: *local-env
+  memory-jobs:
+    environment:
+      <<: *local-env

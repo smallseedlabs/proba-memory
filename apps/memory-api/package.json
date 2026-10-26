@@ -1,0 +1,21 @@
+{
+  "name": "@smallseedlabs/proba-memory-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "proba-memory: memory-api process",
+  "type": "module",
+  "main": "./dist/index.js",
+  "license": "Apache-2.0",
+  "scripts": {
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "fastify": "^4.28.1",
+    "@smallseedlabs/proba-memory-adapters": "*",
+    "@smallseedlabs/proba-memory-core": "*",
+    "@smallseedlabs/proba-memory-scoring": "*",
+    "@smallseedlabs/proba-protocol": "github:smallseedlabs/proba-protocol#v0.3.3",
+    "zod": "^3.23.8"
+  }
+}

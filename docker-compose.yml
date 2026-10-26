@@ -1,0 +1,133 @@
+# Local infrastructure and (optionally) the three services.
+#   docker compose up -d postgres redis          # Postgres with pgvector on :25432, Redis on :26379
+#   docker compose --profile apps up -d --build  # migrate, then memory-api, memory-ingestor, memory-jobs
+# The host ports are deliberately uncommon so they do not clash with other stacks; override with
+# POSTGRES_HOST_PORT / REDIS_HOST_PORT. See README.md for the local (no external provider) setup.
+name: proba-memory-dev
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: proba-memory-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-proba}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-proba}
+      POSTGRES_DB: ${POSTGRES_DB:-proba_memory}
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-25432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-proba} -d ${POSTGRES_DB:-proba_memory}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: proba-memory-redis
+    # AOF persistence ON: the audit stream the ingestor reads must survive a Redis restart.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-26379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot: apply the SQL migrations (idempotent).
+  migrate:
+    profiles: ["apps"]
+    build:
+      context: .
+      target: migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &app-env
+      NODE_ENV: ${NODE_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-proba}:${POSTGRES_PASSWORD:-proba}@postgres:5432/${POSTGRES_DB:-proba_memory}
+      REDIS_URL: redis://redis:6379
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1024}
+      EMBEDDER: ${EMBEDDER:-openai-compatible}
+      EMBEDDER_BASE_URL: ${EMBEDDER_BASE_URL:-}
+      EMBEDDER_MODEL: ${EMBEDDER_MODEL:-}
+      EMBEDDER_VERSION: ${EMBEDDER_VERSION:-1}
+      EMBEDDER_API_KEY: ${EMBEDDER_API_KEY:-}
+      ALLOW_LOCAL_EMBEDDER: ${ALLOW_LOCAL_EMBEDDER:-false}
+      LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-flash}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      ALLOW_SCRIPTED_LLM: ${ALLOW_SCRIPTED_LLM:-false}
+      SOURCES: ${SOURCES:-audit}
+      HUB_CONTENT_SOURCE: ${HUB_CONTENT_SOURCE:-dev}
+      ALLOW_DEV_CONTENT_SOURCE: ${ALLOW_DEV_CONTENT_SOURCE:-false}
+      AUDIT_WORKSPACE_ID: ${AUDIT_WORKSPACE_ID:-seedbed}
+
+  memory-api:
+    profiles: ["apps"]
+    build:
+      context: .
+      target: memory-api
+    container_name: proba-memory-api
+    depends_on: &app-deps
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *app-env
+      PORT: 3200
+      # Sign-in: Firebase ID tokens of this project, verified with Google's public keys (no secret).
+      MEMORY_API_TOKEN_VERIFIER: ${MEMORY_API_TOKEN_VERIFIER:-firebase}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+      # Who may use the API (verified emails). Empty lists allow nobody.
+      MEMORY_API_ALLOWED_EMAILS: ${MEMORY_API_ALLOWED_EMAILS:-}
+      MEMORY_API_ALLOWED_EMAIL_DOMAINS: ${MEMORY_API_ALLOWED_EMAIL_DOMAINS:-}
+      MEMORY_API_ADMIN_EMAILS: ${MEMORY_API_ADMIN_EMAILS:-}
+      MEMORY_API_STATIC_TOKENS: ${MEMORY_API_STATIC_TOKENS:-}
+      MEMORY_API_WORKSPACE_ID: ${MEMORY_API_WORKSPACE_ID:-seedbed}
+      MEMORY_API_CORS_ORIGINS: ${MEMORY_API_CORS_ORIGINS:-}
+      MEMORY_API_RATE_LIMITER: ${MEMORY_API_RATE_LIMITER:-redis}
+      MEMORY_API_TRUST_PROXY: ${MEMORY_API_TRUST_PROXY:-false}
+    ports:
+      - "${MEMORY_API_HOST_PORT:-3200}:3200"
+    restart: unless-stopped
+
+  memory-ingestor:
+    profiles: ["apps"]
+    build:
+      context: .
+      target: memory-ingestor
+    container_name: proba-memory-ingestor
+    depends_on: *app-deps
+    environment:
+      <<: *app-env
+      PORT: 3201
+    ports:
+      - "${MEMORY_INGESTOR_HOST_PORT:-3201}:3201"
+    restart: unless-stopped
+
+  memory-jobs:
+    profiles: ["apps"]
+    build:
+      context: .
+      target: memory-jobs
+    container_name: proba-memory-jobs
+    depends_on: *app-deps
+    environment:
+      <<: *app-env
+      PORT: 3202
+      JOBS_ENABLED: ${JOBS_ENABLED:-decay}
+    ports:
+      - "${MEMORY_JOBS_HOST_PORT:-3202}:3202"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
