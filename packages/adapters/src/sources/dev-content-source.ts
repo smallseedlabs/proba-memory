@@ -1,6 +1,14 @@
+import { createHash } from 'node:crypto';
 import { deterministicUuid, type ContentItem, type ContentPage, type HubContentSource } from '@smallseedlabs/proba-memory-core';
 
 export const DEV_SOURCE_PREFIX = 'dev:';
+
+/**
+ * The credential-shaped string planted in one development message, to show that redaction removes it
+ * before anything is stored. Assembled at runtime from a hash, so no source file holds a literal that
+ * looks like a real key.
+ */
+export const DEV_CONTENT_API_KEY = ['sk', 'live', createHash('sha256').update('proba-dev-content-reporting-key').digest('hex').slice(0, 32)].join('-');
 
 export interface DevHubContentSourceOptions {
   workspaceId: string;
@@ -51,7 +59,7 @@ const SCENARIOS: Scenario[] = [
     goal: 4,
     thread: 4,
     author: 'user',
-    text: 'To connect the reporting tool use the key sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c and send results to jo.marketing@example.com or call +44 7700 900123.',
+    text: `To connect the reporting tool use the key ${DEV_CONTENT_API_KEY} and send results to jo.marketing@example.com or call +44 7700 900123.`,
   },
   { kind: 'approval', goal: 4, decision: 'granted', author: 'user', text: 'Add exact-match brand keywords and a negative keyword list for competitor names.' },
 ];

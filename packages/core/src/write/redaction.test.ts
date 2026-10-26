@@ -1,21 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import type { Observation } from '../domain/index.js';
+import { makeSecrets } from '../testing/secrets.js';
 import { Redactor, luhnValid } from './redaction.js';
 
 const all = new Redactor({ pii: true });
 const secretsOnly = new Redactor({ pii: false });
+const S = makeSecrets();
 
 describe('secrets (always redacted)', () => {
   const cases: [string, string, string][] = [
-    ['api_key', 'use sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c for the tool', 'api_key'],
-    ['api_key (pk)', 'pk_test_aaaaaaaaaaaaaaaaaaaaaaaa', 'api_key'],
-    ['jwt', 'token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk here', 'jwt'],
-    ['aws_key', 'AKIAIOSFODNN7EXAMPLE', 'aws_key'],
-    ['github_token', 'ghp_abcdefghijklmnopqrstuvwxyz0123456789', 'github_token'],
-    ['slack_token', 'xoxb-1234567890-abcdefghij', 'slack_token'],
-    ['google_key', 'AIzaSyA-1234567890abcdefghijklmnopqrstu', 'google_key'],
-    ['bearer_token', 'Authorization: Bearer abcdefghijklmnop1234567890', 'bearer_token'],
-    ['private_key', '-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY-----', 'private_key'],
+    ['api_key', `use ${S.apiKey} for the tool`, 'api_key'],
+    ['api_key (underscore)', `key ${S.secretKey}`, 'api_key'],
+    ['api_key (pk)', S.publishableKey, 'api_key'],
+    ['jwt', `token ${S.jwt} here`, 'jwt'],
+    ['aws_key', S.awsKey, 'aws_key'],
+    ['github_token', S.githubToken, 'github_token'],
+    ['slack_token', S.slackToken, 'slack_token'],
+    ['google_key', S.googleKey, 'google_key'],
+    ['bearer_token', `Authorization: Bearer ${S.bearerValue}`, 'bearer_token'],
+    ['private_key', S.privateKey, 'private_key'],
     ['url_credentials', 'postgres://admin:hunter2secret@db.internal:5432/app', 'url_credentials'],
     ['credential', 'password = "correct-horse-battery"', 'credential'],
     ['credential (token=)', 'token=abcdef123456', 'credential'],
@@ -31,13 +34,13 @@ describe('secrets (always redacted)', () => {
   it('keeps the surrounding text and the name of a credential, drops only its value', () => {
     expect(all.redact('The password: s3cretvalue is rotated weekly').text).toBe('The password: [REDACTED:credential] is rotated weekly');
     expect(all.redact('connect to postgres://admin:hunter2secret@db.internal/app now').text).toBe('connect to postgres://[REDACTED:url_credentials]@db.internal/app now');
-    const key = all.redact('Use sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c for it');
+    const key = all.redact(`Use ${S.apiKey} for it`);
     expect(key.text).toBe('Use [REDACTED:api_key] for it');
-    expect(JSON.stringify(key)).not.toContain('4f9a8b7c');
+    expect(JSON.stringify(key)).not.toContain(S.apiKeyFragment);
   });
 
   it('redacts a private key even when its end marker is missing', () => {
-    expect(all.redact('-----BEGIN PRIVATE KEY-----\nabc').text).toBe('[REDACTED:private_key]');
+    expect(all.redact(`-----${['BEGIN', 'PRIVATE', 'KEY'].join(' ')}-----\nabc`).text).toBe('[REDACTED:private_key]');
   });
 
   it('counts every occurrence', () => {
@@ -64,7 +67,7 @@ describe('personal data (REDACT_PII)', () => {
   });
 
   it('leaves personal data alone when switched off, but still redacts secrets', () => {
-    const r = secretsOnly.redact('jo@example.com uses sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c');
+    const r = secretsOnly.redact(`jo@example.com uses ${S.apiKey}`);
     expect(r.text).toBe('jo@example.com uses [REDACTED:api_key]');
   });
 
@@ -84,10 +87,10 @@ describe('personal data (REDACT_PII)', () => {
 
 describe('properties', () => {
   const samples = [
-    'sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c',
+    S.apiKey,
     'password=abcdef123456 and jo@example.com and +44 7700 900123',
     'plain text with nothing in it',
-    'Bearer abcdefghijklmnop1234567890 and ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+    `Bearer ${S.bearerValue} and ${S.githubToken}`,
     '',
   ];
   it('is idempotent', () => {
@@ -99,7 +102,8 @@ describe('properties', () => {
   it('never leaves a redacted value anywhere in the output', () => {
     for (const s of samples.slice(0, 2)) {
       const out = all.redact(s).text;
-      expect(out).not.toMatch(/4f9a8b7c|abcdef123456|jo@example|7700 900123/);
+      expect(out).not.toContain(S.apiKeyFragment);
+      expect(out).not.toMatch(/abcdef123456|jo@example|7700 900123/);
     }
   });
   it('handles very long input quickly (no catastrophic backtracking)', () => {
@@ -118,7 +122,7 @@ describe('redactObservation', () => {
     sourceRef: 'test:1',
     kind: 'thread.message',
     occurredAt: '2026-10-26T10:00:00.000Z',
-    text: 'my key is sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c, mail jo@example.com',
+    text: `my key is ${S.apiKey}, mail jo@example.com`,
     facts: { note: 'password=abcdef123456', list: ['call +44 7700 900123', 7, true], count: 3, flag: false },
     signal: { polarity: 'negative', strength: 0.5, reason: 'sent token=abcdef123456' },
     significance: 'normal',

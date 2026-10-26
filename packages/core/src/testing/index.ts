@@ -21,3 +21,4 @@ export * from './job-scheduler.contract.js';
 export * from './outcome-linker.contract.js';
 export * from './content-source.contract.js';
 export * from './source-adapter.contract.js';
+export * from './secrets.js';

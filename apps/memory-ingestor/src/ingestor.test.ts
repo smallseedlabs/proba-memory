@@ -11,7 +11,8 @@ import {
   type SourceAdapter,
   type SourceItem,
 } from '@smallseedlabs/proba-memory-core';
-import { createRuntime, createWritePipeline, type Runtime } from '@smallseedlabs/proba-memory-adapters';
+import { DEV_CONTENT_API_KEY, createRuntime, createWritePipeline, type Runtime } from '@smallseedlabs/proba-memory-adapters';
+import { makeSecrets } from '@smallseedlabs/proba-memory-core/testing';
 import { Ingestor, type ObservationProcessor } from './ingestor.js';
 
 const ENV = {
@@ -84,7 +85,7 @@ describe('seeding the development content through the real write path', () => {
 
     // Redaction happened before anything was stored.
     const text = JSON.stringify(memories);
-    expect(text).not.toContain('sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c');
+    expect(text).not.toContain(DEV_CONTENT_API_KEY);
     expect(text).not.toContain('jo.marketing@example.com');
     expect(text).not.toContain('7700 900123');
 
@@ -159,9 +160,11 @@ describe('conversation text carried by audit events (protocol content)', () => {
     await runtime.bus.publish(runtime.config.eventBus.auditTopic, event, { key: WORKSPACE });
   };
 
+  const secrets = makeSecrets();
+
   it('remembers what the user said, redacted, without logging or auditing the text', async () => {
     const { runtime, logger } = await makeRuntime({ SOURCES: 'audit' });
-    await publishMessage(runtime, 'I prefer a warm tone for the brand. Reach me at jo.marketing@example.com, key sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c.', '5a1d9c2e-0000-4000-8000-000000000011');
+    await publishMessage(runtime, 'I prefer a warm tone for the brand. Reach me at jo.marketing@example.com, key ' + secrets.apiKey + '.', '5a1d9c2e-0000-4000-8000-000000000011');
     await publishMessage(runtime, 'Hello again.', '5a1d9c2e-0000-4000-8000-000000000012');
     const source = await runtime.registries.sourceAdapter.create('audit', { ...runtime.deps, consumerName: 'test-consumer' });
     const ingestor = new Ingestor({ sources: [source], pipeline: createWritePipeline(runtime), logger, concurrency: 2, reclaimIntervalMs: 60_000, retryBaseMs: 10, retryMaxMs: 100 });
@@ -174,13 +177,13 @@ describe('conversation text carried by audit events (protocol content)', () => {
     expect(tone!.sourceRefs[0]).toMatchObject({ kind: 'thread', ref: '' + 'audit:5a1d9c2e-0000-4000-8000-000000000011' });
     expect(tone!.threadId).toBe('5a1d9c2e-0000-4000-8000-0000000000aa');
     const everything = JSON.stringify([memories, logger.records, (await auditEvents(runtime)).filter((e) => e.action.startsWith('memory.'))]);
-    expect(everything).not.toContain('sk-live-4f9a');
+    expect(everything).not.toContain(secrets.apiKeyFragment);
     expect(everything).not.toContain('jo.marketing@example.com');
     expect(JSON.stringify(logger.records)).not.toContain('warm tone');
     expect(JSON.stringify(logger.records)).not.toContain('Hello again');
     const stored = await runtime.store.getObservation(WORKSPACE, memories.find((m) => m.sourceRefs[0].ref.endsWith('11'))!.provenance.observationIds[0]);
     expect(stored?.text).toContain('[REDACTED:');
-    expect(JSON.stringify(stored)).not.toContain('sk-live-4f9a');
+    expect(JSON.stringify(stored)).not.toContain(secrets.apiKeyFragment);
   });
 });
 

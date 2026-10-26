@@ -20,6 +20,7 @@ import {
   type LlmRequest,
   type Observation,
 } from '@smallseedlabs/proba-memory-core';
+import { makeSecrets } from '@smallseedlabs/proba-memory-core/testing';
 import { DEFAULT_SCORING_CONFIG_V1 } from '@smallseedlabs/proba-memory-scoring';
 import { HashEmbedder } from '../embedders/index.js';
 import { ScriptedLlmProvider, type Responder } from '../llm/index.js';
@@ -297,11 +298,12 @@ describe('write path', () => {
   describe('untrusted text', () => {
     it('redacts secrets and personal data before any model or embedding call, and before storage', async () => {
       const s = stack({ responder: (req: LlmRequest) => echoResponder(req, 0) });
-      const o = observation('Reach me at jo@example.com or +44 7700 900123; the key is sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c and password=hunter2hunter2.', { facts: { note: 'Bearer abcdefghijklmnop1234567890' } });
+      const secrets = makeSecrets();
+      const o = observation(`Reach me at jo@example.com or +44 7700 900123; the key is ${secrets.apiKey} and password=hunter2hunter2.`, { facts: { note: `Bearer ${secrets.bearerValue}` } });
       await s.pipeline.process(o);
       const seenByModel = JSON.stringify(s.llm.calls);
       const seenByEmbedder = JSON.stringify(s.embedderCalls);
-      for (const raw of ['jo@example.com', '7700 900123', 'sk-live-4f9a', 'hunter2hunter2', 'abcdefghijklmnop1234567890']) {
+      for (const raw of ['jo@example.com', '7700 900123', secrets.apiKey, 'hunter2hunter2', secrets.bearerValue]) {
         expect(seenByModel, raw).not.toContain(raw);
         expect(seenByEmbedder, raw).not.toContain(raw);
         expect(JSON.stringify(await s.all()), raw).not.toContain(raw);
@@ -312,7 +314,7 @@ describe('write path', () => {
     });
 
     it('redacts what the model returns too (a model that echoes a secret it was never shown)', async () => {
-      const leaky: Responder = () => JSON.stringify({ memories: [{ category: 'semantic', content: 'The API key is sk-live-aaaaaaaaaaaaaaaaaaaaaaaa, mail ceo@example.com.', importance: 0.5, confidence: 0.5, stance: 'neutral' }] });
+      const leaky: Responder = () => JSON.stringify({ memories: [{ category: 'semantic', content: `The API key is ${makeSecrets().apiKey}, mail ceo@example.com.`, importance: 0.5, confidence: 0.5, stance: 'neutral' }] });
       const s = stack({ responder: leaky });
       await s.pipeline.process(observation('x'));
       const [m] = await s.all();
@@ -439,11 +441,12 @@ describe('read path', () => {
 
   it('puts a redacted query in the log, never the raw secret', async () => {
     const s = await seedStack();
-    await s.retrieval.search(ctx(), { query: 'find notes about sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c and jo@example.com' });
+    const secrets = makeSecrets();
+    await s.retrieval.search(ctx(), { query: `find notes about ${secrets.apiKey} and jo@example.com` });
     const [entry] = await s.logStore.list(WS, { limit: 1 });
-    expect(entry.queryText).not.toContain('sk-live');
+    expect(entry.queryText).not.toContain(secrets.apiKeyFragment);
     expect(entry.queryText).not.toContain('jo@example.com');
-    expect(JSON.stringify(s.embedderCalls.at(-1))).not.toContain('sk-live');
+    expect(JSON.stringify(s.embedderCalls.at(-1))).not.toContain(secrets.apiKeyFragment);
     expect(JSON.stringify(s.embedderCalls.at(-1))).toContain('[REDACTED:');
   });
 

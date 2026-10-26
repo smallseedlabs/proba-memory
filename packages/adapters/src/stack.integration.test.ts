@@ -11,7 +11,7 @@ import {
   loadConfig,
   type AuditEvent,
 } from '@smallseedlabs/proba-memory-core';
-import { uniqueName } from '@smallseedlabs/proba-memory-core/testing';
+import { makeSecrets, uniqueName } from '@smallseedlabs/proba-memory-core/testing';
 import { createRuntime, createRetrievalService, createWritePipeline, type Runtime } from './runtime/index.js';
 import { getTestPool, testDatabaseUrl, testRedisUrl, TEST_DIMENSION } from './postgres/test-db.js';
 import { randomUUID } from 'node:crypto';
@@ -21,6 +21,7 @@ await getTestPool(); // creates and migrates the test database
 const topic = uniqueName('audit');
 const workspaceA = uniqueName('stack-a');
 const workspaceB = uniqueName('stack-b');
+const secrets = makeSecrets();
 const runtimes: Runtime[] = [];
 
 async function makeRuntime(service: string, extra: Record<string, string> = {}): Promise<{ runtime: Runtime; logger: MemoryLogger }> {
@@ -75,7 +76,7 @@ describe('audit stream to memory to retrieval on Postgres + Redis', () => {
     const { runtime, logger } = await makeRuntime('memory-ingestor');
     const pipeline = createWritePipeline(runtime);
     const texts: [string, string][] = [
-      [workspaceA, 'We never run discount banners with countdown timers, they feel pushy to our audience. Contact jo@example.com, key sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c.'],
+      [workspaceA, `We never run discount banners with countdown timers, they feel pushy to our audience. Contact jo@example.com, key ${secrets.apiKey}.`],
       [workspaceA, 'Our brand voice is warm and plain-spoken.'],
       [workspaceB, 'Discount banners with countdown timers are our best performing format in workspace B. SECRET-B'],
     ];
@@ -104,7 +105,7 @@ describe('audit stream to memory to retrieval on Postgres + Redis', () => {
     expect(a.results.length).toBeGreaterThan(0);
     expect(a.results[0].content).toMatch(/countdown timers/);
     expect(JSON.stringify(a)).not.toContain('SECRET-B');
-    expect(JSON.stringify(a)).not.toContain('sk-live-4f9a');
+    expect(JSON.stringify(a)).not.toContain(secrets.apiKeyFragment);
     expect(JSON.stringify(a)).not.toContain('jo@example.com');
     expect(a.results[0].sourceRefs?.[0]?.kind ?? 'thread').toBe('thread');
     expect(a.candidates!.every((c) => c.features !== undefined)).toBe(true);
@@ -120,7 +121,7 @@ describe('audit stream to memory to retrieval on Postgres + Redis', () => {
     expect((await runtime.store.getMemory(workspaceA, a.results[0].id))!.accessCount).toBeGreaterThanOrEqual(1);
 
     // Secrets and text stayed out of the logs.
-    expect(JSON.stringify(logger.records)).not.toContain('sk-live-4f9a');
+    expect(JSON.stringify(logger.records)).not.toContain(secrets.apiKeyFragment);
     expect(JSON.stringify(logger.records)).not.toContain('pushy');
   });
 
