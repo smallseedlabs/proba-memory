@@ -12,8 +12,8 @@ x-local-env: &local-env
   MEMORY_API_TOKEN_VERIFIER: static
   MEMORY_API_RATE_LIMITER: memory
   # A development token for the local API. Never use it anywhere else.
-  MEMORY_API_STATIC_TOKENS: '[{"token":"local-dev-token","subject":"local-dev","email":"dev@localhost"}]'
-  MEMORY_API_ADMIN_EMAILS: dev@localhost
+  MEMORY_API_STATIC_TOKENS: '[{"token":"local-dev-token","subject":"local-dev","email":"dev@proba.local"}]'
+  MEMORY_API_ADMIN_EMAILS: dev@proba.local
 
 services:
   migrate:
