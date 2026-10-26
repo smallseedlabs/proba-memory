@@ -102,9 +102,12 @@ export class RetrievalService {
     const { deps } = this;
     const started = Date.now();
     const log = deps.logger.child({ traceId: ctx.traceId, workspaceId: ctx.workspaceId, component: 'retrieval' });
-    const query = request.query.replace(/\s+/g, ' ').trim();
-    if (query.length === 0) throw new RetrievalInputError('query must not be empty');
-    if (query.length > deps.settings.maxQueryChars) throw new RetrievalInputError(`query is longer than ${deps.settings.maxQueryChars} characters`);
+    const rawQuery = request.query.replace(/\s+/g, ' ').trim();
+    if (rawQuery.length === 0) throw new RetrievalInputError('query must not be empty');
+    if (rawQuery.length > deps.settings.maxQueryChars) throw new RetrievalInputError(`query is longer than ${deps.settings.maxQueryChars} characters`);
+    // A query can carry a pasted secret or an address like any other text: only the redacted form goes
+    // to the embedding provider, the full-text search, the rerank prompt and the log.
+    const query = deps.redactor.redact(rawQuery).text;
     const limit = Math.min(request.limit ?? deps.settings.defaultLimit, deps.settings.maxLimit);
     if (!(limit >= 1)) throw new RetrievalInputError('limit must be at least 1');
 
@@ -230,7 +233,7 @@ export class RetrievalService {
       degraded,
       durationMs: Date.now() - started,
     };
-    const redactedQuery = deps.redactor.redact(query).text;
+    const redactedQuery = query; // already redacted on entry
     const entry: RetrievalLogEntry = {
       id: retrievalId,
       workspaceId: ctx.workspaceId,
@@ -270,7 +273,7 @@ export class RetrievalService {
             count: results.length,
             ids: results.slice(0, MAX_AUDIT_IDS).map((r) => r.id),
             profile: { name: profile.name, version: profile.version, served: selection.reason, shadowVersion: selection.shadow?.version ?? null },
-            queryLength: query.length,
+            queryLength: rawQuery.length,
             queryHash: entry.queryHash,
             candidates: ranked.traces.length,
             tokensUsed,
@@ -294,7 +297,7 @@ export class RetrievalService {
     return {
       retrievalId,
       traceId: ctx.traceId,
-      query: { length: query.length },
+      query: { length: rawQuery.length },
       profile: {
         name: profile.name,
         version: profile.version,
