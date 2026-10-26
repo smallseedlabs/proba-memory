@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- command-line output is the point of this file */
 import { createLogger, loadConfigFromEnvironment, type RetrievalService } from '@smallseedlabs/proba-memory-core';
 import { createRetrievalService, createRuntime } from '@smallseedlabs/proba-memory-adapters';
 

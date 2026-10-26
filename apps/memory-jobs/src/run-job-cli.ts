@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- command-line output is the point of this file */
 import { createLogger, loadConfigFromEnvironment } from '@smallseedlabs/proba-memory-core';
 import { createRuntime } from '@smallseedlabs/proba-memory-adapters';
 import { createJobs } from './jobs/index.js';

@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- command-line output is the point of this file */
 import { createLogger, loadConfigFromEnvironment } from '@smallseedlabs/proba-memory-core';
 import { createRuntime, createWritePipeline } from '@smallseedlabs/proba-memory-adapters';
 import { Ingestor } from './ingestor.js';
