@@ -1,0 +1,36 @@
+{
+  "name": "@smallseedlabs/proba-memory-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ports, domain types, config, logger, write path, retrieval and job runtime for proba-memory",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js"
+    }
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@smallseedlabs/proba-memory-scoring": "*",
+    "@smallseedlabs/proba-protocol": "github:smallseedlabs/proba-protocol#v0.3.3",
+    "dotenv": "^16.4.5",
+    "pino": "^9.3.2",
+    "pino-pretty": "^11.2.2",
+    "zod": "^3.23.8"
+  },
+  "peerDependencies": {
+    "vitest": "^2.0.5"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
+  }
+}
