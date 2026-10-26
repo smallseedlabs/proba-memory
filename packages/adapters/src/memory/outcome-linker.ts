@@ -34,7 +34,7 @@ export class NoopOutcomeLinker implements OutcomeLinker {
     });
   }
 
-  async list(): Promise<ActionOutcomeLink[]> {
+  async list(_workspaceId: string, _action?: ActionRef): Promise<ActionOutcomeLink[]> {
     return [];
   }
 }
