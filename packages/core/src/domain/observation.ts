@@ -36,8 +36,9 @@ export interface Observation {
   actor?: { type: string; id: string };
   target?: { type: string; id: string };
   /**
-   * Text content, only when the source has it (the Hub content feed). Audit events never carry
-   * message text, so for them this is null and `facts` holds ids, outcomes and lengths.
+   * Text content, only when the source has it: the admin-only `content` of an audit event (protocol 0.3.3)
+   * or an item of the Hub content feed. Sensitive: redacted before any model or embedding call and never
+   * logged. Audit events without `content` give null, and `facts` holds ids, outcomes and lengths.
    */
   text: string | null;
   facts: Record<string, FactValue>;

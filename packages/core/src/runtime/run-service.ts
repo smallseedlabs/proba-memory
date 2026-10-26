@@ -1,5 +1,5 @@
 /**
- * Shared process skeleton for every proba-audit app: load config, create the
+ * Shared process skeleton for every proba-memory app: load config, create the
  * logger, log each lifecycle step, serve /health, and shut down cleanly on
  * SIGTERM/SIGINT. Apps add behaviour through onStart/onStop (none yet).
  */
@@ -16,7 +16,7 @@ export interface ServiceContext {
 }
 
 export interface ServiceDefinition {
-  /** Default service name, for example "audit-consumer". Overridable with SERVICE_NAME. */
+  /** Default service name, for example "memory-api". Overridable with SERVICE_NAME. */
   name: string;
   defaultPort: number;
   onStart?: (ctx: ServiceContext) => Promise<void>;

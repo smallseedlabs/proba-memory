@@ -67,7 +67,7 @@ const routeOf = (request: FastifyRequest): string => request.routeOptions?.url ?
 
 /**
  * Build the memory-api HTTP server. Every dependency is injected, so the same server runs on the real
- * adapters and, in tests, on in-memory ones. Mirrors audit-api: Fastify, CORS, a trace id on every
+ * adapters and, in tests, on in-memory ones. Fastify, CORS, a trace id on every
  * response, one structured log line per request, Firebase ID-token sign-in, an allow-list with
  * viewer/admin roles, the workspace taken from the session, per-caller rate limits.
  */

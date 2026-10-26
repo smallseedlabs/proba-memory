@@ -23,9 +23,9 @@ return {c, ttl}
 `;
 
 /**
- * Fixed-window limiter on Redis, shared by every audit-api replica. If Redis cannot be reached the
+ * Fixed-window limiter on Redis, shared by every memory-api replica. If Redis cannot be reached the
  * limiter fails OPEN (the request is allowed and the error is logged): the rate limit protects the
- * service, it is not what keeps data private, and an audit-api that cannot reach Redis cannot emit
+ * service, it is not what keeps data private, and a memory-api that cannot reach Redis cannot emit
  * its own audit events anyway, so the reads are refused there.
  */
 export class RedisRateLimiter implements RateLimiter {

@@ -72,7 +72,8 @@ async function main(): Promise<void> {
       { query: args.query, ...(args.limit ? { limit: args.limit } : {}) }
     );
     console.log(args.json ? JSON.stringify(response, null, 2) : formatSearch(args.query, response));
-    // The audit event goes through the outbox; give a relay-less CLI a clean exit.
+    // The memory.retrieved audit event is committed to the outbox with the log row; the next running
+    // relay (memory-api, memory-ingestor or memory-jobs) publishes it to the bus.
   } finally {
     await runtime.close();
   }

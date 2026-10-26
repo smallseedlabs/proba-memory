@@ -10,7 +10,7 @@ const MAX_KEYS = 10_000;
 
 /**
  * Fixed-window, in-process limiter (same approach as proba-hub's sign-in limiter). Right for a single
- * audit-api instance; with several replicas use the `redis` adapter so the limit is shared.
+ * memory-api instance; with several replicas use the `redis` adapter so the limit is shared.
  */
 export class InMemoryRateLimiter implements RateLimiter {
   private readonly buckets = new Map<string, Bucket>();

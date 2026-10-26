@@ -33,8 +33,10 @@ export interface SourceAdapter {
 }
 
 /**
- * What the Hub would expose so that memory can read message and thread TEXT (audit events never carry
- * text). The ingestor wraps any HubContentSource in a SourceAdapter that pages through it with a cursor.
+ * What the Hub could expose so that memory can read goal, approval and thread text from the Hub itself.
+ * Secondary to the audit stream: protocol v0.3.3 audit events carry the conversation text in their optional
+ * admin-only `content` field, which the audit source uses first. This feed adds what audit events do not
+ * hold (goal and approval wording, history from before `content` existed). The ingestor wraps any HubContentSource in a SourceAdapter that pages through it with a cursor.
  * See docs/ARCHITECTURE.md ("Hub content feed") for the proposed HTTP shape.
  */
 export interface ContentItem {

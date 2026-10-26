@@ -18,7 +18,7 @@ export class StaticTokenVerifier implements TokenVerifier {
 
   constructor(private readonly options: StaticTokenVerifierOptions) {
     if (options.nodeEnv === 'production') {
-      throw new Error('The static token verifier is not available when NODE_ENV=production. Set AUDIT_API_TOKEN_VERIFIER=firebase.');
+      throw new Error('The static token verifier is not available when NODE_ENV=production. Set MEMORY_API_TOKEN_VERIFIER=firebase.');
     }
   }
 

@@ -9,7 +9,7 @@ import { buildServer } from './server.js';
 
 /**
  * memory-api: the HTTP API over memory retrieval (search, read by id, list, profiles).
- * Lifecycle mirrors the other apps (config, adapters, listen, signals) and audit-api (Fastify).
+ * Lifecycle mirrors the other Proba services (config, adapters, listen, signals); Fastify.
  */
 async function main(): Promise<void> {
   const config = loadConfigFromEnvironment({ serviceName: 'memory-api', defaultPort: 3200 });
