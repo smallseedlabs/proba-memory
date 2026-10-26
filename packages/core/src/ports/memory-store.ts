@@ -35,6 +35,8 @@ export interface MemoryReader {
   /** Links in which the memory takes part, either direction. */
   listLinks(workspaceId: string, memoryId: string): Promise<MemoryLink[]>;
   getObservation(workspaceId: string, id: string): Promise<StoredObservation | null>;
+  /** Observations of the workspace recorded under any of the trace ids, oldest first. */
+  listObservationsByTrace(workspaceId: string, traceIds: string[]): Promise<StoredObservation[]>;
   /** Memories that were created from (or reinforced by) the observation. */
   listObservationMemoryIds(workspaceId: string, observationId: string): Promise<string[]>;
   /** Workspaces that have at least one memory or observation. */

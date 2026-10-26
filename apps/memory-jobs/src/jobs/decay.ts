@@ -80,7 +80,7 @@ export class DecayJob implements Job {
       changed += applied;
       batches += 1;
     } while (cursor);
-    return { processed, changed, details: { batches } };
+    return { processed, changed: ctx.dryRun ? 0 : changed, details: { batches, ...(ctx.dryRun ? { wouldDecay: changed } : {}) } };
   }
 
   private async applyBatch(ctx: JobContext, batch: Memory[], batchNumber: number): Promise<number> {
@@ -96,14 +96,16 @@ export class DecayJob implements Job {
         if (!memory || memory.status !== 'active') continue;
         const change = computeDecay(memory, now, this.options);
         if (!change) continue;
-        const ok = await tx.updateMemory(ctx.workspaceId, memory.id, { ...change, decayedAt: now }, now);
-        if (!ok) continue;
+        if (!ctx.dryRun) {
+          const ok = await tx.updateMemory(ctx.workspaceId, memory.id, { ...change, decayedAt: now }, now);
+          if (!ok) continue;
+        }
         ids.push(memory.id);
         byCategory[memory.category] = (byCategory[memory.category] ?? 0) + 1;
         confidenceLost += memory.confidence - change.confidence;
         importanceLost += memory.importance - change.importance;
       }
-      if (ids.length > 0) {
+      if (ids.length > 0 && !ctx.dryRun) {
         await ctx.emitter.emit(
           {
             actor: MEMORY_ACTOR(this.options.service),

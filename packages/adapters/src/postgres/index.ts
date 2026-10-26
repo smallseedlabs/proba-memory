@@ -6,3 +6,5 @@ export * from './profile-store.js';
 export * from './retrieval-log-store.js';
 export * from './job-run-store.js';
 export * from './outbox-store.js';
+export * from './job-config-store.js';
+export * from './embedding-migration-store.js';

@@ -3,6 +3,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import {
   makeMemoryInsert,
   makeObservation,
+  runEmbeddingMigrationStoreContract,
+  runJobConfigStoreContract,
   runJobRunStoreContract,
   runMemoryStoreContract,
   runOutboxStoreContract,
@@ -13,6 +15,8 @@ import {
   uniqueName,
 } from '@smallseedlabs/proba-memory-core/testing';
 import { migrate, readEmbeddingColumnDimension, readMigrations, DEFAULT_MIGRATIONS_DIR, renderMigration } from './migrate.js';
+import { PostgresEmbeddingMigrationStore } from './embedding-migration-store.js';
+import { PostgresJobConfigStore } from './job-config-store.js';
 import { PostgresJobRunStore } from './job-run-store.js';
 import { PostgresMemoryStore, buildTsQuery } from './memory-store.js';
 import { PostgresOutboxStore } from './outbox-store.js';
@@ -35,6 +39,12 @@ runVectorIndexContract('postgres (pgvector HNSW, cosine)', async () => ({
 runScoringProfileStoreContract('postgres', async () => ({ store: new PostgresScoringProfileStore(pool) }));
 runRetrievalLogStoreContract('postgres', async () => ({ store: new PostgresRetrievalLogStore(pool) }));
 runJobRunStoreContract('postgres', async () => ({ store: new PostgresJobRunStore(pool) }));
+runJobConfigStoreContract('postgres', async () => ({ store: new PostgresJobConfigStore(pool) }));
+runEmbeddingMigrationStoreContract('postgres', async () => ({
+  migration: new PostgresEmbeddingMigrationStore({ pool, dimension: TEST_DIMENSION }),
+  store: new PostgresMemoryStore({ pool }),
+  dimension: TEST_DIMENSION,
+}));
 runOutboxStoreContract('postgres', async () => {
   await truncateOutbox(pool);
   return { store: new PostgresOutboxStore({ pool }) };

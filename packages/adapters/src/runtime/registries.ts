@@ -4,6 +4,8 @@ import {
   type AppConfig,
   type Clock,
   type Embedder,
+  type EmbeddingMigrationStore,
+  type JobConfigStore,
   type EventBus,
   type HubContentSource,
   type IdGenerator,
@@ -29,6 +31,7 @@ import { OpenAiCompatibleEmbedder } from '../embedders/openai-compatible-embedde
 import { DeepSeekLlmProvider, OpenAiCompatibleLlmProvider } from '../llm/openai-compatible-llm.js';
 import { ScriptedLlmProvider } from '../llm/scripted-llm.js';
 import { InMemoryEventBus } from '../memory/event-bus.js';
+import { InMemoryJobConfigStore } from '../memory/job-config-store.js';
 import { InMemoryJobRunStore } from '../memory/job-run-store.js';
 import { InMemoryMemoryStore, InMemoryVectorIndex } from '../memory/memory-store.js';
 import { InMemoryOutboxStore } from '../memory/outbox-store.js';
@@ -36,6 +39,8 @@ import { InMemoryOutcomeLinker, NoopOutcomeLinker } from '../memory/outcome-link
 import { InMemoryScoringProfileStore } from '../memory/profile-store.js';
 import { InMemoryRetrievalLogStore } from '../memory/retrieval-log-store.js';
 import { ApproxTokenCounter } from '../memory/token-counter.js';
+import { PostgresEmbeddingMigrationStore } from '../postgres/embedding-migration-store.js';
+import { PostgresJobConfigStore } from '../postgres/job-config-store.js';
 import { PostgresJobRunStore } from '../postgres/job-run-store.js';
 import { PostgresMemoryStore } from '../postgres/memory-store.js';
 import { PostgresOutboxStore } from '../postgres/outbox-store.js';
@@ -73,6 +78,10 @@ export interface Registries {
   scoringProfileStore: AdapterRegistry<ScoringProfileStore, AdapterDeps>;
   retrievalLogStore: AdapterRegistry<RetrievalLogStore, AdapterDeps>;
   jobRunStore: AdapterRegistry<JobRunStore, AdapterDeps>;
+  /** Versioned job rules: JOB_CONFIG_STORE. */
+  jobConfigStore: AdapterRegistry<JobConfigStore, AdapterDeps>;
+  /** Staged vectors for re-embedding: EMBEDDING_MIGRATION_STORE. */
+  embeddingMigrationStore: AdapterRegistry<EmbeddingMigrationStore, AdapterDeps>;
   outboxStore: AdapterRegistry<OutboxStore, AdapterDeps>;
   eventBus: AdapterRegistry<EventBus, AdapterDeps>;
   embedder: AdapterRegistry<Embedder, AdapterDeps>;
@@ -117,6 +126,17 @@ export function createDefaultRegistries(): Registries {
   const jobRunStore = new AdapterRegistry<JobRunStore, AdapterDeps>('JobRunStore')
     .register('postgres', ({ pool }) => new PostgresJobRunStore(pool()))
     .register('memory', () => new InMemoryJobRunStore());
+
+  const jobConfigStore = new AdapterRegistry<JobConfigStore, AdapterDeps>('JobConfigStore')
+    .register('postgres', ({ pool }) => new PostgresJobConfigStore(pool()))
+    .register('memory', () => new InMemoryJobConfigStore());
+
+  const embeddingMigrationStore = new AdapterRegistry<EmbeddingMigrationStore, AdapterDeps>('EmbeddingMigrationStore')
+    .register('postgres', ({ pool, config }) => new PostgresEmbeddingMigrationStore({ pool: pool(), dimension: config.postgres.embeddingDimension }))
+    .register('memory', ({ memoryStore: store }) => {
+      if (!(store instanceof InMemoryMemoryStore)) throw new Error('EMBEDDING_MIGRATION_STORE=memory needs MEMORY_STORE=memory (the staged vectors live in the in-memory store)');
+      return store;
+    });
 
   const outboxStore = new AdapterRegistry<OutboxStore, AdapterDeps>('OutboxStore')
     .register('postgres', ({ pool }) => new PostgresOutboxStore({ pool: pool() }) as OutboxStore)
@@ -207,6 +227,8 @@ export function createDefaultRegistries(): Registries {
     scoringProfileStore,
     retrievalLogStore,
     jobRunStore,
+    jobConfigStore,
+    embeddingMigrationStore,
     outboxStore,
     eventBus,
     embedder,

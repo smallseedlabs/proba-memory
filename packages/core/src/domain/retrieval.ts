@@ -79,6 +79,20 @@ export interface SearchResponse {
   candidates?: CandidateTrace[];
 }
 
+/**
+ * What happened after a retrieval, resolved from later observations that share its trace id (an approval granted
+ * or rejected on a plan built from the retrieved memories). `none` means no outcome arrived within the window.
+ */
+export type RetrievalVerdict = 'approved' | 'rejected' | 'none';
+
+export interface RetrievalOutcome {
+  verdict: RetrievalVerdict;
+  /** Observation that decided it (absent for `none`). */
+  observationId?: string;
+  /** UTC ISO 8601 time the outcome was resolved. */
+  resolvedAt: string;
+}
+
 export interface RetrievalLogEntry {
   id: string;
   workspaceId: string;
@@ -98,4 +112,8 @@ export interface RetrievalLogEntry {
   results: { id: string; score: number; position: number }[];
   stats: SearchResponse['stats'];
   createdAt: string;
+  /** Resolved by the usage-feedback job; null until then. */
+  outcome?: RetrievalOutcome | null;
+  /** When the usage-feedback job applied the outcome to the memories' usefulness; null until then. */
+  outcomeAppliedAt?: string | null;
 }

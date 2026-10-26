@@ -10,6 +10,11 @@ export interface JobContext {
   traceId: string;
   workspaceId: string;
   trigger: JobTrigger;
+  /**
+   * Dry run: compute and return what would change, write nothing. A job must not write memories, links, vectors,
+   * configs or audit events when this is true (and should not call a model either).
+   */
+  dryRun: boolean;
   /** Carries the traceId and job name on every line. */
   logger: Logger;
   clock: Clock;
@@ -24,9 +29,10 @@ export interface JobContext {
 }
 
 /**
- * A background job. M1 ships `decay`; the interface is what the M2 jobs (consolidate, promote,
- * contradiction resolver, re-embed, usage feedback, cleanup) implement. A job must be idempotent and
- * must never hard-delete memories: retire them with status `superseded` or `tombstoned`.
+ * A background job (decay, consolidate, promote, collapse, contradictions, re-embed, usage feedback, cleanup).
+ * A job must be idempotent (a second run right after the first changes nothing), must honour `ctx.dryRun`,
+ * must read its rules from the versioned JobConfigStore rather than from code, and must never hard-delete
+ * memories: retire them with status `superseded` or `tombstoned`.
  */
 export interface Job {
   readonly name: string;

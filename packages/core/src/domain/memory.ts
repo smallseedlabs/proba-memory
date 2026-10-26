@@ -33,6 +33,13 @@ export interface MemoryProvenance {
   /** Observation kinds that contributed (for example `approval.rejected`). */
   signals: string[];
   createdBy: string;
+  /** Memories this one was derived from (consolidation, promotion). Set by jobs only. */
+  derivedFrom?: string[];
+  /**
+   * Evidence-link adjustments the collapse job already applied, so a run never counts the same link twice:
+   * ids of supporting memories that raised confidence, ids of contradicting memories that lowered it.
+   */
+  adjustments?: { supports: string[]; contradicts: string[] };
 }
 
 export interface Memory {
