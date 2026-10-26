@@ -69,7 +69,7 @@ const RULES: Rule[] = [
   { type: 'aws_key', pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, pii: false },
   { type: 'github_token', pattern: /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})\b/g, pii: false },
   { type: 'slack_token', pattern: /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/g, pii: false },
-  { type: 'api_key', pattern: /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}\b/g, pii: false },
+  { type: 'api_key', pattern: /\b(?:sk|pk|rk)[-_][A-Za-z0-9_-]{16,}\b/g, pii: false },
   { type: 'google_key', pattern: /\bAIza[0-9A-Za-z_-]{35}\b/g, pii: false },
   { type: 'bearer_token', pattern: /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/gi, pii: false },
   {
