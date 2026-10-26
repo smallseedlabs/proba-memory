@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@smallseedlabs/proba-memory-scoring": ["packages/scoring/src/index.ts"],
+      "@smallseedlabs/proba-memory-core": ["packages/core/src/index.ts"],
+      "@smallseedlabs/proba-memory-core/testing": ["packages/core/src/testing/index.ts"],
+      "@smallseedlabs/proba-memory-adapters": ["packages/adapters/src/index.ts"]
+    }
+  },
+  "include": ["packages/*/src/**/*", "apps/*/src/**/*", "vitest.config.ts", "vitest.integration.config.ts"],
+  "exclude": ["node_modules", "**/dist"]
+}

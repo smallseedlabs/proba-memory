@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/scoring" },
+    { "path": "packages/core" },
+    { "path": "packages/adapters" },
+    { "path": "apps/memory-api" },
+    { "path": "apps/memory-ingestor" },
+    { "path": "apps/memory-jobs" }
+  ]
+}

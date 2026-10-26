@@ -1,0 +1,57 @@
+{
+  "name": "@smallseedlabs/proba-memory",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Proba memory service: ingestion, indexing, retrieval and decay of workspace memories (monorepo)",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean",
+    "typecheck": "tsc -p tsconfig.check.json --noEmit",
+    "lint": "eslint packages apps --ext .ts",
+    "test": "NODE_ENV=test vitest run",
+    "test:ci": "NODE_ENV=test vitest run --reporter=default --reporter=json --outputFile.json=test-reports/unit.json && node scripts/assert-test-report.mjs test-reports/unit.json",
+    "test:watch": "NODE_ENV=test vitest",
+    "test:integration": "NODE_ENV=test vitest run --config vitest.integration.config.ts",
+    "test:integration:ci": "NODE_ENV=test vitest run --config vitest.integration.config.ts --reporter=default --reporter=json --outputFile.json=test-reports/integration.json && node scripts/assert-test-report.mjs test-reports/integration.json",
+    "migrate": "npm run build && node packages/adapters/dist/postgres/migrate-cli.js",
+    "seed": "npm run build && node apps/memory-ingestor/dist/seed-cli.js",
+    "search": "npm run build && node apps/memory-api/dist/search-cli.js",
+    "dev:api": "tsx watch apps/memory-api/src/index.ts",
+    "dev:ingestor": "tsx watch apps/memory-ingestor/src/index.ts",
+    "dev:jobs": "tsx watch apps/memory-jobs/src/index.ts",
+    "docker:build": "docker compose --profile apps build",
+    "docker:up": "docker compose up -d postgres redis",
+    "docker:down": "docker compose --profile apps down",
+    "job": "npm run build && node apps/memory-jobs/dist/run-job-cli.js"
+  },
+  "keywords": [
+    "proba",
+    "memory",
+    "pgvector",
+    "retrieval",
+    "redis-streams"
+  ],
+  "author": "Small Seed Labs",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.14.15",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "eslint": "^8.57.0",
+    "js-yaml": "^4.1.0",
+    "tsx": "^4.17.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
