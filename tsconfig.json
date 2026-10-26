@@ -6,6 +6,7 @@
     { "path": "packages/adapters" },
     { "path": "apps/memory-api" },
     { "path": "apps/memory-ingestor" },
-    { "path": "apps/memory-jobs" }
+    { "path": "apps/memory-jobs" },
+    { "path": "apps/memory-eval" }
   ]
 }

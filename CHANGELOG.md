@@ -7,6 +7,14 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Evaluation harness (milestone 3, part A; `apps/memory-eval`, `docs/EVALUATION.md`): golden sets (YAML/JSON) with a
+  loader and validation; recall@k, precision@k, nDCG@k, MRR, avoid rate, token-pack size and latency; time-split
+  backtest (explicit splits or rolling windows); side-by-side comparison of scoring profiles with JSON and
+  Markdown reports; a regression gate (`npm run eval:gate`, exit 1 on a drop beyond the tolerance, exit 3 on a
+  stale baseline) wired into CI on a bundled golden set with the hash embedder and the scripted LLM; and a reader
+  for shadow-profile logs (in process, from `retrieval_log`, or from an export). No portal screens (part B).
+- CI job `Retrieval Regression Gate`; `npm run eval` and `npm run eval:gate`.
+
 - Memory service foundation (milestone 1): categories `working`, `episodic`, `semantic`, `procedural`, `super`,
   separate from the audit store, on Postgres + pgvector.
 - Ports with swappable adapters chosen by config: memory store, vector index, scoring profiles, retrieval log,

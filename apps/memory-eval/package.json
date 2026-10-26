@@ -1,0 +1,21 @@
+{
+  "name": "@smallseedlabs/proba-memory-eval",
+  "version": "0.1.0",
+  "private": true,
+  "description": "proba-memory: retrieval evaluation harness (golden sets, metrics, time-split backtest, profile comparison, regression gate)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "license": "Apache-2.0",
+  "scripts": {
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@smallseedlabs/proba-memory-adapters": "*",
+    "@smallseedlabs/proba-memory-core": "*",
+    "@smallseedlabs/proba-memory-scoring": "*",
+    "@smallseedlabs/proba-protocol": "github:smallseedlabs/proba-protocol#v0.3.3",
+    "js-yaml": "^4.1.0",
+    "zod": "^3.23.8"
+  }
+}

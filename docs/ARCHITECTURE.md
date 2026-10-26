@@ -9,8 +9,9 @@ answers retrieval requests with scored, explainable results.
 - Sources: goals, approvals, message threads, audit and analytics logs.
 - Three parts: **ingestion and indexing** (apps/memory-ingestor), **background jobs** (apps/memory-jobs),
   **retrieval** with a configurable scoring formula (apps/memory-api).
-- Built in M1: the foundation, the write path, retrieval, the read API and the **decay** job. Extension
-  points exist for M2 (more jobs), M3 (evaluation harness) and M4 (portal screens); they are listed at the end.
+- Built in M1: the foundation, the write path, retrieval, the read API and the **decay** job. M3 part A adds the
+  **evaluation harness** (apps/memory-eval). Extension points exist for M2 (more jobs) and M4 (portal screens,
+  including the screens on top of the harness); they are listed at the end.
 
 ## Layout and layering
 
@@ -24,10 +25,12 @@ packages/adapters    implementations of the ports: Postgres+pgvector, Redis Stre
 apps/memory-api      Fastify read API (search, get, list, profiles) + operator search CLI
 apps/memory-ingestor sources -> write path; seed CLI
 apps/memory-jobs     job scheduler and runner; decay job; run-job CLI
+apps/memory-eval     evaluation harness: golden sets, metrics, backtest, profile comparison, regression gate, shadow logs
 migrations/postgres  numbered SQL, applied by `npm run migrate`
 ```
 
-Dependencies point one way: `scoring` ← `core` ← `adapters` ← `apps`. Apps never construct an adapter
+Dependencies point one way: `scoring` ← `core` ← `adapters` ← `apps`; `memory-eval` is an app and no other app
+imports it. Apps never construct an adapter
 directly: `createRuntime(config, { needs })` asks the registries for the adapter named in config and
 only creates the ports the app asked for (the API has no LLM unless rerank is on, for example).
 
@@ -167,6 +170,49 @@ importance fades `DECAY_IMPORTANCE_HALF_LIFE_MULTIPLIER` (2) times slower. Rows 
 Adding a job means implementing core's `Job` and adding one line to `createJobs`; the lease, schedule, audit
 events and logs come with the runner.
 
+## Evaluation harness
+
+`apps/memory-eval` (details and usage: [EVALUATION.md](EVALUATION.md)) measures retrieval quality offline. It adds no
+port and no table: it composes the existing ones.
+
+```mermaid
+flowchart LR
+  G[Golden set<br/>YAML / JSON<br/>corpus + labelled queries] --> L[Loader<br/>zod, digest]
+  L --> RP[Replay<br/>real WritePipeline<br/>ManualClock per observation]
+  RP --> ST[(in-memory store + vector index<br/>hash embedder, scripted LLM)]
+  P[Scoring profiles<br/>data, validated] --> IP[installProfile<br/>InMemoryScoringProfileStore]
+  IP --> RS[RetrievalService<br/>one per profile]
+  ST --> RS
+  RS --> J[Judge + metrics<br/>recall, precision, nDCG, MRR,<br/>avoid rate, tokens, latency]
+  J --> R[report.json / report.md<br/>profile comparison]
+  J --> GT[Gate<br/>vs stored baseline<br/>exit 0 / 1 / 3]
+  RS -->|shadow version| LG[(RetrievalLogStore<br/>shadowResults)]
+  LG --> SH[Shadow reader<br/>served vs shadow]
+  PG[(retrieval_log<br/>of a deployment)] -.->|read only| SH
+```
+
+- **Same code as production.** The harness builds the write path (`MemoryExtractor`, `MemoryResolver`,
+  `WritePipeline`) and `RetrievalService` from the in-process adapters (`HashEmbedder`, `ScriptedLlmProvider`,
+  `InMemoryMemoryStore`, `InMemoryVectorIndex`, `InMemoryScoringProfileStore`, `InMemoryRetrievalLogStore`,
+  `ManualClock`, `SequentialIdGenerator`) exactly as the memory-flow tests do. It never reads `process.env`
+  for providers, so it cannot reach a real model or database by accident. Only `shadow --source=runtime` builds a
+  runtime from config, and only to read the retrieval log and memories.
+- **Deterministic.** Fixed clock, sequential ids, hash embedding, scripted extraction: the same golden set and
+  profiles give the same report, except latency (wall time). The regression baseline therefore stores no
+  timestamps and, by default, no latency.
+- **Profiles are data.** A candidate is the default profile plus overrides, validated by `parseScoringConfig`; a
+  profile under test is installed through the `ScoringProfileStore` port and served through the normal
+  `selectProfiles` path, so rollout behaviour (active, canary, shadow) is the production one.
+- **Time-split backtest.** One empty store per window; observations up to T are replayed with the clock set to
+  their time, queries are asked with the clock at their `asOf`. Expectations that rest on later observations are
+  left out; `avoid` applies only once the replacement is known.
+- **Shadow.** A shadow version is scored next to the served one and logged (`shadowResults`); the harness reads the
+  `RetrievalLogEntry` rows back (in-process, from a deployment's `retrieval_log`, or from an export), matches them to
+  golden queries by query hash, and scores both lists with the same judge. Nothing on the serving path changes.
+- **Gate.** `npm run eval:gate` compares a run with `golden/bundled.baseline.json`: quality metrics may drop by at
+  most `tolerance`, the avoid rate may not rise, the token pack may grow by at most a ratio; a baseline stored for
+  another golden set, k, mode or window set is refused (exit 3). CI runs it as its own job.
+
 ## Ports and adapters
 
 Every external dependency is behind a port. The adapter is named in config; the default is in bold.
@@ -251,7 +297,9 @@ hard-deleted: retiring is a status change.
 - **M2 jobs:** implement `Job`, add to `createJobs`. Planned: consolidation, promotion to `super`,
   contradiction resolution, re-embedding, usage feedback, cleanup. `OutcomeLinker` (+ `buildOutcomeLink`) is
   the hook for linking approved actions to later metric changes (correlation with sample size, never causal).
-- **M3 evaluation harness:** `retrieval_log` holds queries, candidates, features and profile versions; shadow
-  profiles produce the comparison data; profile versions are immutable, so runs are replayable.
+- **M3 evaluation harness (part A built):** see [Evaluation harness](#evaluation-harness). Not built: golden sets drawn
+  from a live deployment (labelling workflow), scheduled evaluation runs and storing run results in Postgres,
+  evaluation with a real embedder or model.
 - **M4 portal screens:** `docs/openapi.yaml` is the contract; the API already returns scores, candidate tables
-  (admin) and profiles.
+  (admin) and profiles. Screens for evaluation results (part B) would need an API for run reports; none exists
+  yet, `report.json` (`schemaVersion: 1`) is the data they would show.

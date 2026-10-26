@@ -10,6 +10,8 @@ logs), stores that as typed memories in Postgres + pgvector, keeps them current 
 - **Read path:** vector + full-text + structured filters → rank fusion → configurable weighted score → MMR diversity
   → optional LLM rerank → token-budget packing. Every retrieval is logged and audited.
 - **Jobs:** decay today; the framework is ready for more.
+- **Evaluation:** golden sets, ranking metrics, time-split backtest, profile comparison, a CI regression gate and
+  shadow-profile analysis ([docs/EVALUATION.md](docs/EVALUATION.md)).
 - **Separate from audit:** audit records what happened, memory is what was learned. Memory reads the audit stream
   and emits its own `memory.*` audit events.
 
@@ -77,6 +79,22 @@ Read-only: there are no write routes. Retrieved text is untrusted data and carri
 Production sign-in uses Firebase ID tokens (`MEMORY_API_TOKEN_VERIFIER=firebase`, `FIREBASE_PROJECT_ID`) with an
 allow-list (`MEMORY_API_ALLOWED_EMAILS`, `MEMORY_API_ALLOWED_EMAIL_DOMAINS`, `MEMORY_API_ADMIN_EMAILS`).
 
+## Evaluate retrieval changes
+
+```bash
+npm run build
+# compare scoring profiles side by side on a golden set (the first profile is the baseline) -> JSON + Markdown
+npm run eval -- run --golden=apps/memory-eval/golden/bundled.yaml --profile=default \
+  --profile=apps/memory-eval/profiles/recency-heavy.yaml --out-dir=test-reports/compare
+# time-split backtest: replay up to T, ask after T
+npm run eval -- backtest --golden=apps/memory-eval/golden/bundled.yaml --split=2026-10-08T00:00:00Z
+npm run eval:gate                  # CI gate: exits non-zero if a metric drops more than the tolerance below the baseline
+npm run eval -- shadow --config apps/memory-eval/eval.config.yaml   # score a shadow profile from the retrieval log
+```
+
+Runs entirely in process (hash embedder, scripted LLM): no network, no model, no database. How to add golden cases
+and how to read the report: [docs/EVALUATION.md](docs/EVALUATION.md).
+
 ## Configuration
 
 Everything is configured through environment variables; `.env.example` lists them with safe defaults and
@@ -108,8 +126,9 @@ packages/adapters    Postgres, Redis Streams, embedder and LLM clients, sources,
 apps/memory-api      read API and operator search CLI
 apps/memory-ingestor sources to write path, seed CLI
 apps/memory-jobs     scheduler and runner, decay job, run-job CLI
+apps/memory-eval     evaluation harness: golden sets, metrics, backtest, comparison, regression gate, shadow logs
 migrations/postgres  numbered SQL migrations
-docs                 ARCHITECTURE.md, openapi.yaml
+docs                 ARCHITECTURE.md, EVALUATION.md, openapi.yaml
 ```
 
 ## Development
@@ -118,10 +137,11 @@ docs                 ARCHITECTURE.md, openapi.yaml
 npm run lint && npm run typecheck && npm run build
 npm test                          # unit tests (in-process adapters)
 npm run test:integration          # needs the Postgres and Redis from `npm run docker:up`
+npm run build && npm run eval:gate   # retrieval regression gate on the bundled golden set (no services needed)
 ```
 
-CI runs lint, type-check and build, the unit tests, the integration tests on pgvector Postgres and Redis service
-containers, and builds the four Docker images (`migrate`, `memory-api`, `memory-ingestor`, `memory-jobs`).
+CI runs lint, type-check and build, the unit tests, the retrieval regression gate, the integration tests on
+pgvector Postgres and Redis service containers, and builds the four Docker images (`migrate`, `memory-api`, `memory-ingestor`, `memory-jobs`).
 Docker host ports are deliberately uncommon (`POSTGRES_HOST_PORT`, `REDIS_HOST_PORT` and the `MEMORY_*_HOST_PORT`
 variables override them).
 
@@ -130,5 +150,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md). License
 ## Not built yet
 
 Planned and prepared by extension points only: more background jobs (M2: consolidation, promotion to super,
-contradiction resolution, re-embedding, usage feedback, cleanup), the evaluation harness (M3) and the portal
-screens (M4). The outcome linker is an interface with a no-op default.
+contradiction resolution, re-embedding, usage feedback, cleanup) and the portal screens (M4, including the
+screens on top of the evaluation harness). The evaluation harness itself (M3 part A) is built. The outcome linker is an interface with a no-op default.

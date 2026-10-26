@@ -1,0 +1,17 @@
+# Run configuration of the CI regression gate (`npm run eval:gate`).
+# Paths are relative to this file. `npm run eval -- gate --config apps/memory-eval/eval.config.yaml` does the same.
+golden: golden/bundled.yaml
+baseline: golden/bundled.baseline.json
+profiles:
+  - default
+k: [1, 3, 5]
+gate:
+  # Largest allowed drop of recall, precision, nDCG and MRR (absolute, 0..1). The run is deterministic, so any
+  # drop is a real change in ranking; the tolerance is the change you accept on purpose.
+  tolerance: 0.02
+  avoidTolerance: 0
+  tokensMaxIncrease: 0.25
+  # latencyMaxIncrease: 1.0   # off by default: in-process wall time is noisy
+shadow:
+  baseline: default
+  candidate: recency-heavy=profiles/recency-heavy.yaml
