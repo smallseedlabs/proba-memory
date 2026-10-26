@@ -11,6 +11,8 @@ logs), stores that as typed memories in Postgres + pgvector, keeps them current 
   → optional LLM rerank → token-budget packing. Every retrieval is logged and audited.
 - **Jobs:** decay plus seven memory-lifecycle jobs (consolidate, promote, collapse, contradictions, re-embed,
   usage feedback, cleanup), each idempotent, leased, audited, with rules in a versioned database config.
+- **Evaluation:** golden sets, ranking metrics, time-split backtest, profile comparison, a CI regression gate and
+  shadow-profile analysis ([docs/EVALUATION.md](docs/EVALUATION.md)).
 - **Separate from audit:** audit records what happened, memory is what was learned. Memory reads the audit stream
   and emits its own `memory.*` audit events.
 
@@ -123,6 +125,22 @@ Scheduling and defaults come from env (see `.env.example`): `JOBS_ENABLED` picks
 `JOBS_LLM_MAX_ATTEMPTS` bound the work. Changing the embedder model: see the re-embed rollout order in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#background-jobs).
 
+## Evaluate retrieval changes
+
+```bash
+npm run build
+# compare scoring profiles side by side on a golden set (the first profile is the baseline) -> JSON + Markdown
+npm run eval -- run --golden=apps/memory-eval/golden/bundled.yaml --profile=default \
+  --profile=apps/memory-eval/profiles/recency-heavy.yaml --out-dir=test-reports/compare
+# time-split backtest: replay up to T, ask after T
+npm run eval -- backtest --golden=apps/memory-eval/golden/bundled.yaml --split=2026-10-08T00:00:00Z
+npm run eval:gate                  # CI gate: exits non-zero if a metric drops more than the tolerance below the baseline
+npm run eval -- shadow --config apps/memory-eval/eval.config.yaml   # score a shadow profile from the retrieval log
+```
+
+Runs entirely in process (hash embedder, scripted LLM): no network, no model, no database. How to add golden cases
+and how to read the report: [docs/EVALUATION.md](docs/EVALUATION.md).
+
 ## Configuration
 
 Everything is configured through environment variables; `.env.example` lists them with safe defaults and
@@ -156,8 +174,9 @@ packages/adapters    Postgres, Redis Streams, embedder and LLM clients, sources,
 apps/memory-api      read API and operator search CLI
 apps/memory-ingestor sources to write path, seed CLI
 apps/memory-jobs     scheduler and runner, the eight jobs, versioned job config, run-job and job-config CLIs
+apps/memory-eval     evaluation harness: golden sets, metrics, backtest, comparison, regression gate, shadow logs
 migrations/postgres  numbered SQL migrations
-docs                 ARCHITECTURE.md, openapi.yaml
+docs                 ARCHITECTURE.md, EVALUATION.md, openapi.yaml
 ```
 
 ## Development
@@ -166,10 +185,11 @@ docs                 ARCHITECTURE.md, openapi.yaml
 npm run lint && npm run typecheck && npm run build
 npm test                          # unit tests (in-process adapters)
 npm run test:integration          # needs the Postgres and Redis from `npm run docker:up`
+npm run build && npm run eval:gate   # retrieval regression gate on the bundled golden set (no services needed)
 ```
 
-CI runs lint, type-check and build, the unit tests, the integration tests on pgvector Postgres and Redis service
-containers, and builds the four Docker images (`migrate`, `memory-api`, `memory-ingestor`, `memory-jobs`).
+CI runs lint, type-check and build, the unit tests, the retrieval regression gate, the integration tests on
+pgvector Postgres and Redis service containers, and builds the four Docker images (`migrate`, `memory-api`, `memory-ingestor`, `memory-jobs`).
 Docker host ports are deliberately uncommon (`POSTGRES_HOST_PORT`, `REDIS_HOST_PORT` and the `MEMORY_*_HOST_PORT`
 variables override them).
 
@@ -177,5 +197,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md). License
 
 ## Not built yet
 
-Planned and prepared by extension points only: the evaluation harness (M3) and the portal screens (M4). The outcome
+Planned and prepared by extension points only: the portal screens (M4, including the screens on top of the
+evaluation harness). The evaluation harness itself (M3 part A) and the M2 lifecycle jobs are built. The outcome
 linker is an interface with a no-op default.

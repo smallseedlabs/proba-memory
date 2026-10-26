@@ -1,0 +1,150 @@
+# Bundled golden set: small, fictional, deterministic. CI runs it with the hash embedder and the scripted LLM.
+# Every observation says exactly what the scripted model "extracts" (`extract`), so the corpus does not depend on
+# any model. See docs/EVALUATION.md for how to add cases.
+version: 1
+name: bundled
+description: Marketing-workspace preferences, rules and facts with two superseded facts (budget, posting time).
+workspace: eval-workspace
+now: 2026-10-25T09:00:00Z
+k: [1, 3, 5]
+
+observations:
+  - key: headline-length
+    occurredAt: 2026-09-01T10:00:00Z
+    text: "We prefer short headlines under forty characters."
+    polarity: positive
+    extract: { category: semantic, content: "The workspace prefers short headlines under forty characters.", importance: 0.7, confidence: 0.8, stance: positive }
+
+  - key: budget-old
+    occurredAt: 2026-09-02T10:00:00Z
+    text: "Monthly marketing budget is 10000 dollars."
+    extract: { category: semantic, content: "The monthly marketing budget is capped at 10000 dollars.", importance: 0.8, confidence: 0.8 }
+
+  - key: countdown-timers
+    occurredAt: 2026-09-03T10:00:00Z
+    text: "Please stop using countdown timers on discount banners, they feel pushy."
+    polarity: negative
+    strength: 0.8
+    extract: { category: semantic, content: "The user dislikes countdown timers on discount banners because they feel too aggressive.", importance: 0.8, confidence: 0.85, stance: negative }
+
+  - key: posting-time-old
+    occurredAt: 2026-09-05T10:00:00Z
+    text: "Social posts get the most reach when published in the morning."
+    extract: { category: semantic, content: "Social media posts perform best when published in the morning at 9am.", importance: 0.6, confidence: 0.7 }
+
+  - key: discount-rejected
+    occurredAt: 2026-09-20T10:00:00Z
+    kind: approval.rejected
+    text: "Rejected the 40 percent spring sale discount campaign."
+    polarity: negative
+    strength: 0.9
+    extract: { category: episodic, content: "The user rejected the 40 percent discount campaign proposal for the spring sale.", importance: 0.6, confidence: 0.9, stance: negative }
+
+  - key: channel-order
+    occurredAt: 2026-09-12T10:00:00Z
+    text: "For product launches tell the newsletter list first, social after."
+    extract: { category: procedural, content: "Product launch announcements should go out by email first, then on social media channels.", importance: 0.7, confidence: 0.8 }
+
+  - key: tone-of-voice
+    occurredAt: 2026-09-15T10:00:00Z
+    text: "Our copy should sound friendly, no corporate jargon."
+    polarity: positive
+    extract: { category: semantic, content: "The brand tone of voice is friendly and informal, never corporate jargon.", importance: 0.75, confidence: 0.85, stance: positive }
+
+  - key: audience
+    occurredAt: 2026-09-22T10:00:00Z
+    text: "We mostly sell to small business owners in Germany."
+    extract: { category: semantic, content: "The primary target audience is small business owners in Germany.", importance: 0.8, confidence: 0.85 }
+
+  - key: approval-rule
+    occurredAt: 2026-09-28T10:00:00Z
+    text: "Nothing goes live without the brand manager signing off."
+    extract: { category: procedural, content: "Every campaign must be approved by the brand manager before launch.", importance: 0.85, confidence: 0.9 }
+
+  - key: competitor
+    occurredAt: 2026-10-02T10:00:00Z
+    text: "Acme keeps running influencer campaigns every week."
+    extract: { category: semantic, content: "Competitor Acme runs weekly influencer campaigns on Instagram.", importance: 0.5, confidence: 0.6 }
+
+  - key: posting-time-new
+    occurredAt: 2026-10-05T10:00:00Z
+    text: "Evening posts now beat morning posts on every network."
+    extract: { category: semantic, content: "Social media posts now perform best when published in the evening at 6pm after work hours.", importance: 0.7, confidence: 0.8 }
+
+  - key: newsletter-result
+    occurredAt: 2026-10-10T10:00:00Z
+    text: "The last newsletter reached a 32 percent open rate."
+    extract: { category: episodic, content: "The most recent newsletter had a 32 percent open rate, the best result this year.", importance: 0.5, confidence: 0.85 }
+
+  - key: budget-new
+    occurredAt: 2026-10-15T10:00:00Z
+    text: "The monthly marketing budget is now 20000 dollars."
+    extract: { category: semantic, content: "The monthly marketing budget was raised to 20000 dollars.", importance: 0.85, confidence: 0.9 }
+
+  - key: weather-chat
+    occurredAt: 2026-10-18T10:00:00Z
+    text: "The office lunch order is pizza on Friday."
+    extract: { category: episodic, content: "The team ordered pizza for the Friday office lunch.", importance: 0.1, confidence: 0.6 }
+
+  - key: black-friday-draft
+    occurredAt: 2026-10-24T16:00:00Z
+    text: "Today we are drafting the Black Friday landing page."
+    extract: { category: working, content: "Today the team is drafting the Black Friday landing page.", importance: 0.5, confidence: 0.8 }
+
+queries:
+  - id: headline-length
+    query: "how long should headlines be"
+    expect: { observations: [headline-length] }
+
+  - id: countdown-timers
+    query: "can we use countdown timers on discount banners"
+    expect: { observations: [countdown-timers] }
+
+  - id: current-budget
+    query: "what is the monthly marketing budget"
+    expect:
+      observations: [budget-new]
+      avoid: { observations: [budget-old] }
+
+  - id: posting-time
+    query: "when do social media posts perform best"
+    expect:
+      observations: [posting-time-new]
+      avoid: { observations: [posting-time-old] }
+
+  - id: launch-channels
+    query: "which channels first for product launch announcements"
+    expect: { observations: [channel-order] }
+
+  - id: tone
+    query: "what tone of voice should the copy use"
+    expect: { observations: [tone-of-voice] }
+
+  - id: discount-history
+    query: "was the spring sale discount campaign approved"
+    expect: { observations: [discount-rejected] }
+
+  - id: target-audience
+    query: "who is the target audience"
+    expect: { observations: [audience] }
+
+  - id: approval-process
+    query: "who has to approve a campaign before launch"
+    expect: { observations: [approval-rule] }
+
+  - id: newsletter-performance
+    query: "how did the last newsletter perform"
+    expect: { observations: [newsletter-result] }
+
+  - id: today
+    query: "what is the team drafting today"
+    expect: { observations: [black-friday-draft] }
+
+  # Graded relevance: both memories matter for a launch, the approval rule more than the channel order.
+  - id: launch-rules
+    query: "rules before a campaign launch announcement"
+    tags: [graded]
+    expect:
+      observations:
+        - { value: approval-rule, grade: 2 }
+        - channel-order

@@ -14,6 +14,7 @@ COPY packages/adapters/package.json packages/adapters/
 COPY apps/memory-api/package.json apps/memory-api/
 COPY apps/memory-ingestor/package.json apps/memory-ingestor/
 COPY apps/memory-jobs/package.json apps/memory-jobs/
+COPY apps/memory-eval/package.json apps/memory-eval/
 RUN npm ci
 COPY tsconfig.base.json tsconfig.json ./
 COPY packages ./packages
@@ -31,6 +32,7 @@ COPY packages/adapters/package.json packages/adapters/
 COPY apps/memory-api/package.json apps/memory-api/
 COPY apps/memory-ingestor/package.json apps/memory-ingestor/
 COPY apps/memory-jobs/package.json apps/memory-jobs/
+COPY apps/memory-eval/package.json apps/memory-eval/
 RUN npm ci --omit=dev && npm cache clean --force
 
 # Stage 3: shared runtime base (no git, non-root user)
@@ -80,3 +82,15 @@ CMD ["node", "apps/memory-jobs/dist/index.js"]
 FROM runtime AS migrate
 COPY --chown=proba:proba migrations ./migrations
 CMD ["node", "packages/adapters/dist/postgres/migrate-cli.js"]
+
+# One-shot: the retrieval regression gate on the bundled golden set (in process, no services needed).
+#   docker run --rm proba-memory-eval                       # gate
+#   docker run --rm proba-memory-eval run --golden=apps/memory-eval/golden/bundled.yaml --profile=default
+FROM runtime AS memory-eval
+COPY --from=builder --chown=proba:proba /app/apps/memory-eval/package.json /app/apps/memory-eval/
+COPY --from=builder --chown=proba:proba /app/apps/memory-eval/dist /app/apps/memory-eval/dist
+COPY --chown=proba:proba apps/memory-eval/golden ./apps/memory-eval/golden
+COPY --chown=proba:proba apps/memory-eval/profiles ./apps/memory-eval/profiles
+COPY --chown=proba:proba apps/memory-eval/eval.config.yaml ./apps/memory-eval/eval.config.yaml
+ENTRYPOINT ["node", "apps/memory-eval/dist/cli.js"]
+CMD ["gate", "--config", "apps/memory-eval/eval.config.yaml"]

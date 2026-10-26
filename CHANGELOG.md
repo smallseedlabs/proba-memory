@@ -20,12 +20,20 @@ versions follow [Semantic Versioning](https://semver.org/).
   through staged vectors and an atomic cutover.
 - Contract suites for the new ports; unit and Postgres integration tests for every job.
 - Memory lifecycle diagram in `docs/ARCHITECTURE.md`.
+- Evaluation harness (milestone 3, part A; `apps/memory-eval`, `docs/EVALUATION.md`): golden sets (YAML/JSON) with a
+  loader and validation; recall@k, precision@k, nDCG@k, MRR, avoid rate, token-pack size and latency; time-split
+  backtest (explicit splits or rolling windows); side-by-side comparison of scoring profiles with JSON and
+  Markdown reports; a regression gate (`npm run eval:gate`, exit 1 on a drop beyond the tolerance, exit 3 on a
+  stale baseline) wired into CI on a bundled golden set with the hash embedder and the scripted LLM; and a reader
+  for shadow-profile logs (in process, from `retrieval_log`, or from an export). No portal screens (part B).
+- CI job `Retrieval Regression Gate`; `npm run eval` and `npm run eval:gate`.
 
 ### Changed
 
 - The job runner takes `dryRun` and `workspaceId` options; `decay` honours dry run and reports `changed: 0` then.
 
 ### Added (milestone 1)
+
 
 - Memory service foundation (milestone 1): categories `working`, `episodic`, `semantic`, `procedural`, `super`,
   separate from the audit store, on Postgres + pgvector.

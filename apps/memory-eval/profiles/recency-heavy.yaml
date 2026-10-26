@@ -1,0 +1,15 @@
+# Candidate profile for the bundled golden set: what if recency mattered much more?
+# Only the differences from the built-in default profile are listed; the rest is inherited.
+name: recency-heavy
+description: Recency weight 0.35 (default 0.15) and shorter half-lives, to prefer newer facts.
+config:
+  weights:
+    relevance: 0.4
+    recency: 0.35
+    importance: 0.1
+    confidence: 0.1
+    usefulness: 0.05
+  halfLifeDays:
+    semantic: 30
+    procedural: 60
+    episodic: 7

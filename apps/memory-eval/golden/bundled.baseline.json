@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "golden": {
+    "name": "bundled",
+    "digest": "bc2b7b170e0d6d52c06fc61a5ab5a8716ea06b83ceb708cfcd8f837e683c45d6"
+  },
+  "mode": "static",
+  "windowsDigest": null,
+  "k": [
+    1,
+    3,
+    5
+  ],
+  "profiles": {
+    "default": {
+      "configDigest": "9dc2d463386754e7c6068a2ec8b31462aff5c80792b44e0cf58c657028f98764",
+      "metrics": {
+        "recall@1": 0.625,
+        "precision@1": 0.6667,
+        "ndcg@1": 0.6667,
+        "recall@3": 1,
+        "precision@3": 0.3611,
+        "ndcg@3": 0.8619,
+        "recall@5": 1,
+        "precision@5": 0.2167,
+        "ndcg@5": 0.8619,
+        "mrr": 0.8194,
+        "avoidRate@1": 0,
+        "avoidRate@3": 0.5,
+        "avoidRate@5": 1,
+        "tokens.mean": 110.17,
+        "tokens.p95": 121
+      }
+    }
+  }
+}
