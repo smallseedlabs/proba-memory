@@ -34,6 +34,8 @@ export const envSchema = z.object({
   SCORING_PROFILE_STORE: nonEmpty('postgres'),
   RETRIEVAL_LOG_STORE: nonEmpty('postgres'),
   JOB_RUN_STORE: nonEmpty('postgres'),
+  JOB_CONFIG_STORE: nonEmpty('postgres'),
+  EMBEDDING_MIGRATION_STORE: nonEmpty('postgres'),
   OUTBOX_STORE: nonEmpty('postgres'),
   EVENT_BUS: nonEmpty('redis-streams'),
   EMBEDDER: nonEmpty('openai-compatible'),
@@ -138,6 +140,20 @@ export const envSchema = z.object({
   DECAY_IMPORTANCE_HALF_LIFE_MULTIPLIER: z.coerce.number().min(1).max(100).default(2),
   // Do not write a row whose values would move less than this.
   DECAY_MIN_CHANGE: z.coerce.number().min(0).max(0.5).default(0.002),
+  // M2 jobs. Their rules and thresholds are NOT here: they live in the versioned `job_configs` table (see docs/ARCHITECTURE.md).
+  // Scheduled runs only compute and report when this is true; `npm run job -- <name> --dry-run` does the same once.
+  JOBS_DRY_RUN: bool('false'),
+  // Memories read per page by the M2 jobs.
+  JOBS_BATCH_SIZE: positiveInt(200),
+  // Tries (including the first) for each structured LLM call a job makes.
+  JOBS_LLM_MAX_ATTEMPTS: positiveInt(3),
+  CONSOLIDATE_INTERVAL_MS: positiveInt(21600000),
+  PROMOTE_INTERVAL_MS: positiveInt(86400000),
+  COLLAPSE_INTERVAL_MS: positiveInt(43200000),
+  CONTRADICTIONS_INTERVAL_MS: positiveInt(43200000),
+  REEMBED_INTERVAL_MS: positiveInt(600000),
+  USAGE_FEEDBACK_INTERVAL_MS: positiveInt(3600000),
+  CLEANUP_INTERVAL_MS: positiveInt(21600000),
   // category=days pairs overriding the default half-lives, for example `working=1,episodic=10`.
   DECAY_HALF_LIFE_DAYS: z.string().default(''),
 
@@ -163,6 +179,10 @@ export const envSchema = z.object({
 });
 
 export type Env = z.infer<typeof envSchema>;
+
+/** The jobs added in M2, by the name used in JOBS_ENABLED and `npm run job`. */
+export const M2_JOB_NAMES = ['consolidate', 'promote', 'collapse', 'contradictions', 'reembed', 'usage-feedback', 'cleanup'] as const;
+export type M2JobName = (typeof M2_JOB_NAMES)[number];
 
 export interface StaticTokenEntry {
   token: string;
@@ -233,6 +253,8 @@ export interface AppConfig {
     scoringProfileStore: string;
     retrievalLogStore: string;
     jobRunStore: string;
+    jobConfigStore: string;
+    embeddingMigrationStore: string;
     outboxStore: string;
     eventBus: string;
     embedder: string;
@@ -305,6 +327,11 @@ export interface AppConfig {
   jobs: {
     enabled: string[];
     leaseMs: number;
+    dryRun: boolean;
+    batchSize: number;
+    llmMaxAttempts: number;
+    /** Schedule of the M2 jobs by job name. */
+    intervalsMs: Record<M2JobName, number>;
     decay: {
       intervalMs: number;
       batchSize: number;
@@ -402,6 +429,8 @@ export function loadConfig(env: EnvSource = process.env, options: LoadConfigOpti
       scoringProfileStore: e.SCORING_PROFILE_STORE,
       retrievalLogStore: e.RETRIEVAL_LOG_STORE,
       jobRunStore: e.JOB_RUN_STORE,
+      jobConfigStore: e.JOB_CONFIG_STORE,
+      embeddingMigrationStore: e.EMBEDDING_MIGRATION_STORE,
       outboxStore: e.OUTBOX_STORE,
       eventBus: e.EVENT_BUS,
       embedder: e.EMBEDDER,
@@ -490,6 +519,18 @@ export function loadConfig(env: EnvSource = process.env, options: LoadConfigOpti
     jobs: {
       enabled: parseNameList(e.JOBS_ENABLED),
       leaseMs: e.JOB_LEASE_MS,
+      dryRun: e.JOBS_DRY_RUN,
+      batchSize: e.JOBS_BATCH_SIZE,
+      llmMaxAttempts: e.JOBS_LLM_MAX_ATTEMPTS,
+      intervalsMs: {
+        consolidate: e.CONSOLIDATE_INTERVAL_MS,
+        promote: e.PROMOTE_INTERVAL_MS,
+        collapse: e.COLLAPSE_INTERVAL_MS,
+        contradictions: e.CONTRADICTIONS_INTERVAL_MS,
+        reembed: e.REEMBED_INTERVAL_MS,
+        'usage-feedback': e.USAGE_FEEDBACK_INTERVAL_MS,
+        cleanup: e.CLEANUP_INTERVAL_MS,
+      },
       decay: {
         intervalMs: e.DECAY_INTERVAL_MS,
         batchSize: e.DECAY_BATCH_SIZE,

@@ -17,3 +17,5 @@ export * from './retrieval-log-store.js';
 export * from './job-run-store.js';
 export * from './job-scheduler.js';
 export * from './outcome-linker.js';
+export * from './job-config-store.js';
+export * from './embedding-migration-store.js';

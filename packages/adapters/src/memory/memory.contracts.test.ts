@@ -1,8 +1,10 @@
 import {
   runClockContract,
+  runEmbeddingMigrationStoreContract,
   runEventBusContract,
   runHubContentSourceContract,
   runIdGeneratorContract,
+  runJobConfigStoreContract,
   runJobRunStoreContract,
   runJobSchedulerContract,
   runMemoryStoreContract,
@@ -18,6 +20,7 @@ import { IntervalJobScheduler, ManualJobScheduler } from '../scheduler/interval-
 import { DevHubContentSource } from '../sources/dev-content-source.js';
 import { SequentialIdGenerator } from './clock-ids.js';
 import { InMemoryEventBus } from './event-bus.js';
+import { InMemoryJobConfigStore } from './job-config-store.js';
 import { InMemoryJobRunStore } from './job-run-store.js';
 import { InMemoryMemoryStore, InMemoryVectorIndex } from './memory-store.js';
 import { InMemoryOutboxStore } from './outbox-store.js';
@@ -41,6 +44,11 @@ runVectorIndexContract('in-memory', async () => {
 runScoringProfileStoreContract('in-memory', async () => ({ store: new InMemoryScoringProfileStore() }));
 runRetrievalLogStoreContract('in-memory', async () => ({ store: new InMemoryRetrievalLogStore() }));
 runJobRunStoreContract('in-memory', async () => ({ store: new InMemoryJobRunStore() }));
+runJobConfigStoreContract('in-memory', async () => ({ store: new InMemoryJobConfigStore() }));
+runEmbeddingMigrationStoreContract('in-memory', async () => {
+  const store = new InMemoryMemoryStore();
+  return { migration: store, store, dimension: DIM };
+});
 runOutboxStoreContract('in-memory', async () => ({ store: new InMemoryOutboxStore() }));
 runEventBusContract('in-memory', async () => ({ bus: new InMemoryEventBus() }));
 runOutcomeLinkerContract('in-memory', () => new InMemoryOutcomeLinker());

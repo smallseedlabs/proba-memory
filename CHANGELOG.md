@@ -7,6 +7,19 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Memory lifecycle jobs (milestone 2): `consolidate`, `promote`, `collapse`, `contradictions`, `reembed`,
+  `usage-feedback` and `cleanup`, on the existing job framework. Each is idempotent, leased, audited with
+  `memory.*` events (new: `memory.promoted`, `memory.collapsed`, `memory.confidence_adjusted`,
+  `memory.contradiction_resolved`, `memory.contradiction_linked`, `memory.reembedded`, `memory.usage_updated`,
+  `memory.tombstoned`) and supports a dry-run mode.
+- Versioned job rules in the database (`job_configs`, ports `JobConfigStore` and `EmbeddingMigrationStore`,
+  migration `0006_jobs_m2.sql`), with `npm run job-config` (seed, show, history, publish).
+- `npm run job -- <name> [--dry-run] [--workspace <id>]`; env `JOBS_DRY_RUN`, `JOBS_BATCH_SIZE`,
+  `JOBS_LLM_MAX_ATTEMPTS`, `<JOB>_INTERVAL_MS`, `JOB_CONFIG_STORE`, `EMBEDDING_MIGRATION_STORE`.
+- Retrieval outcomes (`retrieval_log.outcome`) feeding the learned usefulness feature; zero-downtime re-embed
+  through staged vectors and an atomic cutover.
+- Contract suites for the new ports; unit and Postgres integration tests for every job.
+- Memory lifecycle diagram in `docs/ARCHITECTURE.md`.
 - Evaluation harness (milestone 3, part A; `apps/memory-eval`, `docs/EVALUATION.md`): golden sets (YAML/JSON) with a
   loader and validation; recall@k, precision@k, nDCG@k, MRR, avoid rate, token-pack size and latency; time-split
   backtest (explicit splits or rolling windows); side-by-side comparison of scoring profiles with JSON and
@@ -14,6 +27,13 @@ versions follow [Semantic Versioning](https://semver.org/).
   stale baseline) wired into CI on a bundled golden set with the hash embedder and the scripted LLM; and a reader
   for shadow-profile logs (in process, from `retrieval_log`, or from an export). No portal screens (part B).
 - CI job `Retrieval Regression Gate`; `npm run eval` and `npm run eval:gate`.
+
+### Changed
+
+- The job runner takes `dryRun` and `workspaceId` options; `decay` honours dry run and reports `changed: 0` then.
+
+### Added (milestone 1)
+
 
 - Memory service foundation (milestone 1): categories `working`, `episodic`, `semantic`, `procedural`, `super`,
   separate from the audit store, on Postgres + pgvector.

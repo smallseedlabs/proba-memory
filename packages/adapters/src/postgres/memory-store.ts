@@ -188,6 +188,16 @@ class PgReader {
     return r.rows.map((row) => ({ id: String(row.id), rank: Number(row.rank) }));
   }
 
+  async listObservationsByTrace(workspaceId: string, traceIds: string[]): Promise<StoredObservation[]> {
+    const wanted = [...new Set(traceIds)].filter(Boolean);
+    if (wanted.length === 0) return [];
+    const r = await this.db.query(
+      `SELECT ${OBSERVATION_COLUMNS} FROM observations WHERE workspace_id = $1 AND trace_id = ANY($2::text[]) ORDER BY occurred_at, id`,
+      [workspaceId, wanted]
+    );
+    return r.rows.map(toObservation);
+  }
+
   async listLinks(workspaceId: string, memoryId: string): Promise<MemoryLink[]> {
     if (!isUuid(memoryId)) return [];
     const r = await this.db.query(

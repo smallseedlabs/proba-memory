@@ -14,8 +14,12 @@ import {
   type MemoryPage,
   type MemoryPatch,
   type MemoryFilter,
+  type EmbeddingMigrationStats,
+  type EmbeddingMigrationStore,
+  type EmbeddingTarget,
   type MemoryStore,
   type MemoryStoreTx,
+  type PendingEmbedding,
   type Observation,
   type ObservationStatus,
   type StoredObservation,
@@ -31,6 +35,8 @@ import { rankDocuments } from './text-search.js';
 interface Row {
   memory: Memory;
   embedding: number[] | null;
+  /** A vector of a newer model, written by the re-embed job and not served until cutover. */
+  staged: { vector: number[]; model: string; version: string } | null;
 }
 
 interface State {
@@ -46,7 +52,7 @@ const obsKey = (ws: string, id: string): string => `${ws}\u0000${id}`;
 
 function cloneState(s: State): State {
   return {
-    rows: new Map([...s.rows].map(([k, r]) => [k, { memory: clone(r.memory), embedding: r.embedding ? [...r.embedding] : null }])),
+    rows: new Map([...s.rows].map(([k, r]) => [k, { memory: clone(r.memory), embedding: r.embedding ? [...r.embedding] : null, staged: r.staged ? clone(r.staged) : null }])),
     links: clone(s.links),
     observations: new Map([...s.observations].map(([k, o]) => [k, clone(o)])),
     sources: new Map([...s.sources].map(([k, v]) => [k, new Set(v)])),
@@ -58,7 +64,7 @@ function cloneState(s: State): State {
  * its own writes visible) and workspace isolation. Its vectors live in the same rows, exactly like the
  * pgvector column, and InMemoryVectorIndex reads them from here. For tests and single-process local runs.
  */
-export class InMemoryMemoryStore implements MemoryStore {
+export class InMemoryMemoryStore implements MemoryStore, EmbeddingMigrationStore {
   private state: State = { rows: new Map(), links: [], observations: new Map(), sources: new Map() };
   private lock: Promise<unknown> = Promise.resolve();
 
@@ -97,6 +103,14 @@ export class InMemoryMemoryStore implements MemoryStore {
         .map((m) => ({ id: m.id, text: `${m.content} ${m.summary ?? ''}` }));
       return rankDocuments(q.query, docs).slice(0, q.limit);
     },
+    listObservationsByTrace: async (workspaceId: string, traceIds: string[]): Promise<StoredObservation[]> => {
+      const wanted = new Set(traceIds);
+      return clone(
+        [...state().observations.values()]
+          .filter((o) => o.workspaceId === workspaceId && o.traceId !== undefined && wanted.has(o.traceId))
+          .sort((a, b) => (a.occurredAt === b.occurredAt ? (a.id < b.id ? -1 : 1) : a.occurredAt < b.occurredAt ? -1 : 1))
+      );
+    },
     listLinks: async (workspaceId: string, memoryId: string): Promise<MemoryLink[]> =>
       clone(state().links.filter((l) => l.workspaceId === workspaceId && (l.fromId === memoryId || l.toId === memoryId))),
     getObservation: async (workspaceId: string, id: string): Promise<StoredObservation | null> => {
@@ -121,6 +135,7 @@ export class InMemoryMemoryStore implements MemoryStore {
   searchText = this.reader(() => this.state).searchText;
   listLinks = this.reader(() => this.state).listLinks;
   getObservation = this.reader(() => this.state).getObservation;
+  listObservationsByTrace = this.reader(() => this.state).listObservationsByTrace;
   listObservationMemoryIds = this.reader(() => this.state).listObservationMemoryIds;
   listWorkspaceIds = this.reader(() => this.state).listWorkspaceIds;
   countMemories = this.reader(() => this.state).countMemories;
@@ -137,6 +152,7 @@ export class InMemoryMemoryStore implements MemoryStore {
         state().rows.set(m.id, {
           memory: clone({ ...rest, validFrom: iso(rest.validFrom), lastReinforcedAt: iso(rest.lastReinforcedAt), createdAt: at, updatedAt: at } as Memory),
           embedding: embedding ? [...embedding] : null,
+          staged: null,
         });
       },
       updateMemory: async (workspaceId: string, id: string, patch: MemoryPatch, at: string): Promise<boolean> => {
@@ -233,6 +249,71 @@ export class InMemoryMemoryStore implements MemoryStore {
   /** @internal */
   getRow(id: string): Row | undefined {
     return this.state.rows.get(id);
+  }
+
+  // --- embedding migration (the staged vector lives next to the current one, like the second pgvector column) ---
+
+  private isAtTarget(row: Row, target: EmbeddingTarget): boolean {
+    return row.embedding !== null && row.memory.embeddingModel === target.model && row.memory.embeddingVersion === target.version;
+  }
+
+  private isStaged(row: Row, target: EmbeddingTarget): boolean {
+    return row.staged !== null && row.staged.model === target.model && row.staged.version === target.version;
+  }
+
+  async listPending(workspaceId: string, target: EmbeddingTarget, limit: number): Promise<PendingEmbedding[]> {
+    return this.serial(async () =>
+      [...this.state.rows.values()]
+        .filter((r) => r.memory.workspaceId === workspaceId && r.memory.status === 'active' && !this.isAtTarget(r, target) && !this.isStaged(r, target))
+        .sort((a, b) => (a.memory.id < b.memory.id ? -1 : 1))
+        .slice(0, limit)
+        .map((r) => ({ id: r.memory.id, text: r.memory.content }))
+    );
+  }
+
+  async stats(workspaceId: string, target: EmbeddingTarget): Promise<EmbeddingMigrationStats> {
+    return this.serial(async () => {
+      const stats: EmbeddingMigrationStats = { active: 0, atTarget: 0, staged: 0, pending: 0 };
+      for (const r of this.state.rows.values()) {
+        if (r.memory.workspaceId !== workspaceId || r.memory.status !== 'active') continue;
+        stats.active += 1;
+        if (this.isAtTarget(r, target)) stats.atTarget += 1;
+        else if (this.isStaged(r, target)) stats.staged += 1;
+        else stats.pending += 1;
+      }
+      return stats;
+    });
+  }
+
+  async writeStaged(workspaceId: string, target: EmbeddingTarget, items: { id: string; vector: number[] }[]): Promise<number> {
+    return this.serial(async () => {
+      let n = 0;
+      for (const item of items) {
+        const row = this.state.rows.get(item.id);
+        if (!row || row.memory.workspaceId !== workspaceId || row.memory.status !== 'active') continue;
+        row.staged = { vector: [...item.vector], model: target.model, version: target.version };
+        n += 1;
+      }
+      return n;
+    });
+  }
+
+  async cutover(workspaceId: string, target: EmbeddingTarget): Promise<{ swapped: number; pending: number }> {
+    return this.serial(async () => {
+      const active = [...this.state.rows.values()].filter((r) => r.memory.workspaceId === workspaceId && r.memory.status === 'active');
+      const pending = active.filter((r) => !this.isAtTarget(r, target) && !this.isStaged(r, target)).length;
+      if (pending > 0) return { swapped: 0, pending };
+      let swapped = 0;
+      for (const r of active) {
+        if (this.isAtTarget(r, target) || !r.staged) continue;
+        r.embedding = r.staged.vector;
+        r.memory.embeddingModel = r.staged.model;
+        r.memory.embeddingVersion = r.staged.version;
+        r.staged = null;
+        swapped += 1;
+      }
+      return { swapped, pending: 0 };
+    });
   }
 
   async ping(): Promise<void> {

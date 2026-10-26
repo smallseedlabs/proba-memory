@@ -88,6 +88,52 @@ export function runRetrievalLogStoreContract(name: string, factory: () => Promis
       expect((await store.list(b)).map((e) => e.id)).toEqual([eb.id]);
     });
 
+    it('lists unresolved entries oldest first, by cut-off, and per workspace', async () => {
+      const { store } = await make();
+      const a = uniqueName('wsA');
+      const b = uniqueName('wsB');
+      const old = makeLogEntry(a, { createdAt: '2026-10-24T09:00:00.000Z' });
+      const older = makeLogEntry(a, { createdAt: '2026-10-23T09:00:00.000Z' });
+      const recent = makeLogEntry(a, { createdAt: '2026-10-26T09:00:00.000Z' });
+      const elsewhere = makeLogEntry(b, { createdAt: '2026-10-23T09:00:00.000Z' });
+      for (const e of [old, older, recent, elsewhere]) await store.append(e);
+      const unresolved = await store.listUnresolved(a, { createdBefore: '2026-10-25T00:00:00.000Z', limit: 10 });
+      expect(unresolved.map((e) => e.id)).toEqual([older.id, old.id]);
+      expect((await store.listUnresolved(a, { createdBefore: '2026-10-25T00:00:00.000Z', limit: 1 })).map((e) => e.id)).toEqual([older.id]);
+      await store.recordOutcome(a, older.id, { verdict: 'none', resolvedAt: '2026-10-26T09:00:00.000Z' });
+      expect((await store.listUnresolved(a, { createdBefore: '2026-10-25T00:00:00.000Z', limit: 10 })).map((e) => e.id)).toEqual([old.id]);
+    });
+
+    it('records an outcome once (the first wins) and reads it back', async () => {
+      const { store } = await make();
+      const ws = uniqueName('ws');
+      const other = uniqueName('wsOther');
+      const entry = makeLogEntry(ws);
+      await store.append(entry);
+      const observationId = randomUUID();
+      expect(await store.recordOutcome(ws, entry.id, { verdict: 'approved', observationId, resolvedAt: '2026-10-26T10:00:00.000Z' })).toBe(true);
+      expect(await store.recordOutcome(ws, entry.id, { verdict: 'rejected', resolvedAt: '2026-10-26T11:00:00.000Z' })).toBe(false);
+      expect((await store.get(ws, entry.id))?.outcome).toEqual({ verdict: 'approved', observationId, resolvedAt: '2026-10-26T10:00:00.000Z' });
+      expect(await store.recordOutcome(ws, randomUUID(), { verdict: 'none', resolvedAt: '2026-10-26T10:00:00.000Z' })).toBe(false);
+      expect(await store.recordOutcome(other, entry.id, { verdict: 'none', resolvedAt: '2026-10-26T10:00:00.000Z' })).toBe(false); // another workspace's id
+    });
+
+    it('lets an outcome be applied exactly once', async () => {
+      const { store } = await make();
+      const ws = uniqueName('ws');
+      const entry = makeLogEntry(ws, { createdAt: '2026-10-24T09:00:00.000Z' });
+      const waiting = makeLogEntry(ws, { createdAt: '2026-10-25T09:00:00.000Z' });
+      await store.append(entry);
+      await store.append(waiting);
+      expect(await store.markOutcomeApplied(ws, entry.id, '2026-10-26T12:00:00.000Z')).toBe(false); // no outcome yet
+      await store.recordOutcome(ws, entry.id, { verdict: 'rejected', resolvedAt: '2026-10-26T10:00:00.000Z' });
+      expect((await store.listUnapplied(ws, { limit: 10 })).map((e) => e.id)).toEqual([entry.id]);
+      const claims = await Promise.all([1, 2, 3].map(() => store.markOutcomeApplied(ws, entry.id, '2026-10-26T12:00:00.000Z')));
+      expect(claims.filter(Boolean)).toHaveLength(1);
+      expect(await store.listUnapplied(ws, { limit: 10 })).toEqual([]);
+      expect((await store.get(ws, entry.id))?.outcomeAppliedAt).toBe('2026-10-26T12:00:00.000Z');
+    });
+
     it('answers ping', async () => {
       const { store } = await make();
       await expect(store.ping()).resolves.toBeUndefined();

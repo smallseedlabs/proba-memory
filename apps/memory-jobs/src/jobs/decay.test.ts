@@ -80,6 +80,8 @@ const ENV = {
   SCORING_PROFILE_STORE: 'memory',
   RETRIEVAL_LOG_STORE: 'memory',
   JOB_RUN_STORE: 'memory',
+  JOB_CONFIG_STORE: 'memory',
+  EMBEDDING_MIGRATION_STORE: 'memory',
   OUTBOX_STORE: 'memory',
   EVENT_BUS: 'memory',
   AUDIT_TRANSPORT: 'bus',
