@@ -4,7 +4,7 @@ import type { IdGenerator } from '../ports/id-generator.js';
 import type { JobRunStore } from '../ports/job-run-store.js';
 import type { Logger } from '../ports/logger.js';
 import type { MemoryStore } from '../ports/memory-store.js';
-import type { JobRun, JobTrigger } from '../domain/index.js';
+import type { JobRun, JobRunOptions, JobTrigger } from '../domain/index.js';
 import type { Job } from './job.js';
 
 export interface JobRunnerDeps {
@@ -20,6 +20,8 @@ export interface JobRunnerDeps {
   service: string;
   /** A run still marked running after this long is treated as abandoned. */
   leaseMs: number;
+  /** Default for runs that do not say: JOBS_DRY_RUN. */
+  dryRun?: boolean;
 }
 
 /**
@@ -37,21 +39,24 @@ export class JobRunner {
     this.abort.abort();
   }
 
-  async runJob(job: Job, trigger: JobTrigger): Promise<JobRun[]> {
+  async runJob(job: Job, trigger: JobTrigger, options: JobRunOptions = {}): Promise<JobRun[]> {
     const { store, logger } = this.deps;
-    const workspaceIds = await store.listWorkspaceIds();
-    logger.info('job cycle started', { job: job.name, trigger, workspaces: workspaceIds.length });
+    const dryRun = options.dryRun ?? this.deps.dryRun ?? false;
+    const known = await store.listWorkspaceIds();
+    // A named workspace only runs when it exists: the filter can never reach beyond the workspaces the store knows.
+    const workspaceIds = options.workspaceId === undefined ? known : known.filter((id) => id === options.workspaceId);
+    logger.info('job cycle started', { job: job.name, trigger, dryRun, workspaces: workspaceIds.length });
     const runs: JobRun[] = [];
     for (const workspaceId of workspaceIds) {
       if (this.abort.signal.aborted) break;
-      const run = await this.runForWorkspace(job, workspaceId, trigger);
+      const run = await this.runForWorkspace(job, workspaceId, trigger, dryRun);
       if (run) runs.push(run);
     }
-    logger.info('job cycle finished', { job: job.name, trigger, runs: runs.length, failed: runs.filter((r) => r.status === 'failed').length });
+    logger.info('job cycle finished', { job: job.name, trigger, dryRun, runs: runs.length, failed: runs.filter((r) => r.status === 'failed').length });
     return runs;
   }
 
-  private async runForWorkspace(job: Job, workspaceId: string, trigger: JobTrigger): Promise<JobRun | null> {
+  private async runForWorkspace(job: Job, workspaceId: string, trigger: JobTrigger, dryRun: boolean): Promise<JobRun | null> {
     const { deps } = this;
     const runId = deps.ids.uuid();
     const traceId = deps.ids.uuid();
@@ -69,7 +74,7 @@ export class JobRunner {
       log.info('job run skipped: another run is in progress');
       return null;
     }
-    log.info('job run started', { trigger });
+    log.info('job run started', { trigger, dryRun });
     const t0 = Date.now();
     try {
       const result = await job.run({
@@ -77,15 +82,17 @@ export class JobRunner {
         traceId,
         workspaceId,
         trigger,
+        dryRun,
         logger: log,
         clock: deps.clock,
         store: deps.store,
         emitter: deps.emitter.forTrace(traceId),
         signal: this.abort.signal,
       });
-      const finished = await deps.jobRuns.finishSuccess(runId, result, deps.clock.isoNow());
+      const finished = await deps.jobRuns.finishSuccess(runId, dryRun ? { ...result, details: { ...result.details, dryRun: true } } : result, deps.clock.isoNow());
       log.info('job run finished', { processed: result.processed, changed: result.changed, durationMs: Date.now() - t0, ...(result.details ?? {}) });
-      await deps.lifecycleEmitter.forTrace(traceId).emit({
+      // A dry run leaves no audit trail beyond its job_runs row and its logs: it changes nothing.
+      if (!dryRun) await deps.lifecycleEmitter.forTrace(traceId).emit({
         actor: { type: 'service', id: deps.service },
         workspaceId,
         action: 'system.job_run',

@@ -13,6 +13,7 @@ export function createJobRunner(runtime: Runtime): JobRunner {
     logger: runtime.logger,
     service: runtime.service,
     leaseMs: runtime.config.jobs.leaseMs,
+    dryRun: runtime.config.jobs.dryRun,
   });
 }
 

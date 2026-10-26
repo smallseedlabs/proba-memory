@@ -9,8 +9,9 @@ answers retrieval requests with scored, explainable results.
 - Sources: goals, approvals, message threads, audit and analytics logs.
 - Three parts: **ingestion and indexing** (apps/memory-ingestor), **background jobs** (apps/memory-jobs),
   **retrieval** with a configurable scoring formula (apps/memory-api).
-- Built in M1: the foundation, the write path, retrieval, the read API and the **decay** job. Extension
-  points exist for M2 (more jobs), M3 (evaluation harness) and M4 (portal screens); they are listed at the end.
+- Built in M1: the foundation, the write path, retrieval, the read API and the **decay** job. Built in M2: the
+  seven **memory lifecycle jobs** and their versioned rules. Extension points exist for M3 (evaluation harness)
+  and M4 (portal screens); they are listed at the end.
 
 ## Layout and layering
 
@@ -23,7 +24,7 @@ packages/adapters    implementations of the ports: Postgres+pgvector, Redis Stre
                      and the registries that pick them by config
 apps/memory-api      Fastify read API (search, get, list, profiles) + operator search CLI
 apps/memory-ingestor sources -> write path; seed CLI
-apps/memory-jobs     job scheduler and runner; decay job; run-job CLI
+apps/memory-jobs     job scheduler and runner; the eight jobs; versioned job config; run-job and job-config CLIs
 migrations/postgres  numbered SQL, applied by `npm run migrate`
 ```
 
@@ -146,17 +147,95 @@ flowchart LR
 - **Retrieved text is untrusted data.** Every result carries `trust: "untrusted_data"`; consumers must treat it
   as data to quote, never as instructions. The API returns it as JSON and never interprets it.
 
+## Memory lifecycle
+
+```mermaid
+stateDiagram-v2
+  [*] --> working: write path (short-lived context)
+  [*] --> episodic: write path (an observed event)
+  working --> tombstoned: cleanup (TTL or validTo passed)
+  episodic --> semantic: consolidate (cluster summarised, sources superseded)
+  episodic --> tombstoned: cleanup (stale and low importance)
+  semantic --> procedural: promote (repeated, confirmed, old enough)
+  procedural --> super: promote (stricter thresholds)
+  semantic --> super: promote (stricter thresholds)
+  semantic --> superseded: collapse (same meaning, winner kept)
+  semantic --> superseded: contradictions (loser of a clear decision)
+  semantic --> tombstoned: cleanup (stale and low importance)
+  procedural --> superseded: collapse / contradictions
+  super --> superseded: collapse / contradictions
+  superseded --> [*]: kept for history and provenance
+  tombstoned --> [*]: kept; never retrieved, never deleted
+```
+
+Category moves are one-way and always leave the source rows in place: consolidate and promote create a new
+memory and supersede the old ones (`supersedes` links, `provenance.derivedFrom`), collapse keeps the best
+duplicate, contradictions either supersede the loser or keep both linked with `contradicts`. `status` is
+`active`, `superseded` or `tombstoned`; nothing is hard-deleted. Confidence and usefulness change along the way
+(collapse raises it on reinforcement and lowers it on contradiction, usage feedback learns usefulness from
+approvals and rejections, decay lowers it with time); re-embed changes only the vector.
+
 ## Background jobs
 
 ```mermaid
 flowchart LR
-  SCH[JobScheduler<br/>interval / manual] --> RUN[JobRunner]
+  SCH[JobScheduler<br/>interval / manual / CLI] --> RUN[JobRunner]
   RUN -->|lease: one running row per job and workspace| JR[(job_runs)]
-  RUN --> D[DecayJob]
-  D -->|batches, in one transaction each| MEM[(memories)]
-  D --> AE[memory.decayed per batch<br/>system.job_run per run]
-  X[M2: consolidate, promote to super,<br/>contradiction resolver, re-embed,<br/>usage feedback, cleanup] -.-> RUN
+  RUN --> J[Job.run ctx: dryRun, workspaceId, emitter, traceId]
+  CFG[(job_configs<br/>versioned rules)] -->|resolve workspace, else global| J
+  J --> D[decay]
+  J --> C[consolidate]
+  J --> P[promote]
+  J --> K[collapse]
+  J --> X[contradictions]
+  J --> R[reembed]
+  J --> U[usage-feedback]
+  J --> L[cleanup]
+  C & P & K & X & D & L -->|one transaction per batch| MEM[(memories, memory_links)]
+  R -->|staged vector, then atomic cutover| MEM
+  U -->|reads outcomes, writes usefulness| MEM
+  U --- RL[(retrieval_log.outcome)]
+  C -.->|JSON mode, zod-checked| LLM[LlmProvider]
+  R -.-> EMB[Embedder]
+  J --> AE[memory.* per batch, in the same transaction<br/>system.job_run per run]
 ```
+
+Every job implements core's `Job`, is created by `createJobs`, and gets the lease, the schedule, the audit
+events, the structured logs, the `--dry-run` switch and per-workspace isolation from the runner. The runner only
+visits workspaces that exist; a job receives one `workspaceId` and every store call is scoped by it.
+
+**Rules in the database.** `job_configs` holds one immutable row per version of (workspace, job); publishing
+retires the active version in the same step. Workspace `*` is the global version; a workspace row overrides it for
+that workspace. Each job parses its row with a zod schema whose defaults are the seed (`npm run job-config -- seed`,
+or the first non-dry run). A row that fails validation fails the run loudly. Details of every run and audit
+event carry `configVersion`.
+
+| Job | Idempotency | Core rules (all configurable) |
+| --- | --- | --- |
+| consolidate | deterministic id for the summary from the sorted source ids; sources leave `active` in the same transaction | similarity threshold, time window, min and max cluster size, minimum age |
+| promote | deterministic id from source id and target category; source superseded in the same transaction | per target: evidence count, confidence, age, weighted evidence (agreeing approvals and rejections count `decisiveWeight` times, disagreeing ones subtract), decisive signals, usefulness; blocked by an active contradiction |
+| collapse | superseded duplicates leave the candidate set; an `adjustments` ledger in provenance counts each supporting or contradicting link once | duplicate threshold, merge, support and contradiction deltas, floor and ceiling |
+| contradictions | a resolved pair is no longer both active; an unresolved pair keeps one `contradicts` link (upsert) | related threshold, weights for recency, evidence strength and source, decisive margin |
+| reembed | only active memories not yet at the target; staging is an upsert; cutover swaps nothing while any is pending | per-run cap, auto cutover |
+| usage-feedback | the outcome is recorded once (first wins) and applied once (atomic claim in the same transaction as the updates) | outcome window, learning rate, position discount |
+| cleanup | tombstoned rows leave the candidate set | working TTL, stale categories, importance ceiling, idle days |
+
+**Usage feedback** reads each retrieval's trace id, finds the approval or rejection observations recorded under
+it after the retrieval (workspace-scoped), takes the first, and moves each returned memory's `usefulness`
+toward 1 (approved) or 0 (rejected) by `learningRate`, discounted by result position. A retrieval with no
+decision after the window is closed with outcome `none` and changes nothing. The scoring profile's `usefulness`
+feature reads this column, so retrieval learns from approvals without a code change.
+
+**Re-embed rollout order (no downtime).** Vector search only compares vectors of the same model and version, so
+the served vector must not change until every active memory has its replacement.
+1. Run the job with the NEW embedder settings (`EMBEDDER_*`, same `EMBEDDING_DIMENSION`) while the API and the
+   ingestor still use the old ones (`npm run job -- reembed`, or the scheduled run). It embeds batches into
+   `embedding_next*`; retrieval keeps using `embedding`.
+2. When no active memory is pending, it swaps staged to current in one atomic transaction (or an operator runs it
+   with `autoCutover: false`).
+3. Move the API and ingestor to the new settings. Memories written between the cutover and this step carry the
+   old model and are picked up by the next run.
+A different dimension needs a column migration first; the job refuses a vector of the wrong length.
 
 **Decay** lowers `confidence` and `importance` of active memories exponentially toward floors
 (`DECAY_CONFIDENCE_FLOOR`, `DECAY_IMPORTANCE_FLOOR`), measured from the later of the last reinforcement and the
@@ -164,8 +243,12 @@ last decay, so runs do not compound and a run right after another changes nothin
 working 1 day, episodic 14, semantic 180, procedural 365, super 730 (`DECAY_HALF_LIFE_DAYS` overrides);
 importance fades `DECAY_IMPORTANCE_HALF_LIFE_MULTIPLIER` (2) times slower. Rows moving less than
 `DECAY_MIN_CHANGE` are skipped without resetting their clock. It never deletes, retires or changes content.
-Adding a job means implementing core's `Job` and adding one line to `createJobs`; the lease, schedule, audit
-events and logs come with the runner.
+Decay stays configured by env (`DECAY_*`); the seven M2 jobs read the database.
+
+**Prompt safety.** The consolidation prompt marks memory text as data inside a JSON document and the reply is
+validated against a schema; text that tries to instruct the model is treated as a note to summarise. The reply
+is redacted before it is stored, and a reply that fails validation is retried up to `JOBS_LLM_MAX_ATTEMPTS` times,
+then the cluster is skipped for this run.
 
 ## Ports and adapters
 
@@ -178,6 +261,8 @@ Every external dependency is behind a port. The adapter is named in config; the 
 | ScoringProfileStore | `SCORING_PROFILE_STORE` | **postgres**, memory | versioned profiles |
 | RetrievalLogStore | `RETRIEVAL_LOG_STORE` | **postgres**, memory | |
 | JobRunStore | `JOB_RUN_STORE` | **postgres**, memory | lease via partial unique index |
+| JobConfigStore | `JOB_CONFIG_STORE` | **postgres**, memory | versioned job rules, global and per workspace |
+| EmbeddingMigrationStore | `EMBEDDING_MIGRATION_STORE` | **postgres**, memory | staged vectors and atomic cutover; `memory` is the in-memory MemoryStore |
 | OutboxStore | `OUTBOX_STORE` | **postgres**, memory | audit outbox |
 | EventBus | `EVENT_BUS` | **redis-streams**, memory | consumer groups, reclaim, dead letters |
 | Embedder | `EMBEDDER` | **openai-compatible**, hash (local) | `EMBEDDER_BASE_URL`, `EMBEDDER_MODEL`, `EMBEDDING_DIMENSION` |
@@ -204,7 +289,7 @@ unless explicitly allowed (`ALLOW_LOCAL_EMBEDDER`, `ALLOW_SCRIPTED_LLM`, `ALLOW_
 
 Embedder: set `EMBEDDER_BASE_URL`, `EMBEDDER_MODEL`, `EMBEDDER_VERSION` and `EMBEDDING_DIMENSION`; every memory
 stores `embeddingModel` and `embeddingVersion`, and vector search only compares vectors of the same model and
-version, so a model change is a re-embed job (M2), not a silent mix. Changing the dimension needs a migration
+version, so a model change is the re-embed job (see its rollout order), not a silent mix. Changing the dimension needs a migration
 of the `vector(N)` column. Vector store: implement `VectorIndex` (and `MemoryStore` if text and structured
 queries move too). Bus: implement `EventBus` (publish, subscribe, read/ack/reclaim/dead-letter), for example
 Kafka. LLM: any OpenAI-compatible endpoint works through `LLM_PROVIDER=openai-compatible` with
@@ -216,20 +301,23 @@ The `AuditEmitter`, the transactional outbox (`audit_outbox` table), the outbox 
 publisher are copied from proba-audit with **identical interfaces** (`createOutboxAuditEmitter`,
 `createBusAuditEmitter`, `OutboxStore`, `OutboxRelay`, `EventBus`, `AUDIT_TRANSPORT=outbox|bus`). Events use
 the `memory.*` actions of the catalog (`memory.ingested`, `memory.consolidated`, `memory.retrieved`,
-`memory.decayed`) and `system.*` lifecycle actions; details carry ids, counts and lengths, never memory text.
+`memory.decayed`, `memory.promoted`, `memory.collapsed`, `memory.confidence_adjusted`,
+`memory.contradiction_resolved`, `memory.contradiction_linked`, `memory.reembedded`, `memory.usage_updated`,
+`memory.tombstoned`) and `system.*` lifecycle actions; details carry ids, counts and lengths, never memory text.
 Types come from `@smallseedlabs/proba-protocol` pinned to v0.3.3.
 
 ## Data model (Postgres)
 
 | Table | Purpose |
 | --- | --- |
-| `memories` | one row per memory: workspace, category, content, summary, `embedding vector(N)` (HNSW cosine), generated `content_tsv` (GIN), importance, confidence, usefulness, status (`active`/`superseded`/`tombstoned`), `supersedes_id`, validity window, access and reinforcement counters, evidence count, goal/thread, source refs, provenance |
+| `memories` | one row per memory: workspace, category, content, summary, `embedding vector(N)` (HNSW cosine) with model and version, plus `embedding_next*` (the staged vector of a re-embed), generated `content_tsv` (GIN), importance, confidence, usefulness, status (`active`/`superseded`/`tombstoned`), `supersedes_id`, validity window, access and reinforcement counters, evidence count, goal/thread, source refs, provenance |
 | `observations` | the idempotency ledger of the write path: id, source, redacted text, facts, signal, status, attempts |
 | `memory_sources` | which observations created or reinforced which memory |
 | `memory_links` | `supports`, `contradicts`, `supersedes` between memories, with weight |
 | `scoring_profiles` | versioned profiles, one active per (workspace, name) |
-| `retrieval_log` | every retrieval with candidates, features, profile version, results |
+| `retrieval_log` | every retrieval with candidates, features, profile version, results; `outcome` (approved, rejected, none) and `outcome_applied_at` are filled by the usage-feedback job |
 | `job_runs` | job executions and leases (one running per job and workspace) |
+| `job_configs` | versioned job rules per (workspace, job); `*` is global; one active version each |
 | `audit_outbox` | audit events waiting to be published |
 
 Every query is scoped by `workspace_id`; there is no code path that reads across workspaces. Nothing is
@@ -248,9 +336,9 @@ hard-deleted: retiring is a status change.
 
 ## Extension points for later milestones (not built)
 
-- **M2 jobs:** implement `Job`, add to `createJobs`. Planned: consolidation, promotion to `super`,
-  contradiction resolution, re-embedding, usage feedback, cleanup. `OutcomeLinker` (+ `buildOutcomeLink`) is
-  the hook for linking approved actions to later metric changes (correlation with sample size, never causal).
+- **More jobs:** implement `Job`, add one line to `createJobs`, add a config schema to `job-configs.ts`.
+  `OutcomeLinker` (+ `buildOutcomeLink`) is the hook for linking approved actions to later metric changes
+  (correlation with sample size, never causal).
 - **M3 evaluation harness:** `retrieval_log` holds queries, candidates, features and profile versions; shadow
   profiles produce the comparison data; profile versions are immutable, so runs are replayable.
 - **M4 portal screens:** `docs/openapi.yaml` is the contract; the API already returns scores, candidate tables

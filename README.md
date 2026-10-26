@@ -9,7 +9,8 @@ logs), stores that as typed memories in Postgres + pgvector, keeps them current 
   embedding → store. Idempotent by observation id.
 - **Read path:** vector + full-text + structured filters → rank fusion → configurable weighted score → MMR diversity
   → optional LLM rerank → token-budget packing. Every retrieval is logged and audited.
-- **Jobs:** decay today; the framework is ready for more.
+- **Jobs:** decay plus seven memory-lifecycle jobs (consolidate, promote, collapse, contradictions, re-embed,
+  usage feedback, cleanup), each idempotent, leased, audited, with rules in a versioned database config.
 - **Separate from audit:** audit records what happened, memory is what was learned. Memory reads the audit stream
   and emits its own `memory.*` audit events.
 
@@ -33,6 +34,8 @@ npm run migrate                 # create the schema (idempotent)
 npm run seed                    # load 25 development items through the real write path
 npm run search -- --limit=5 "what does the user think about discount banners with countdown timers"
 npm run job -- decay            # run the decay job once
+npm run job-config -- seed      # publish the default rules of the M2 jobs as version 1
+npm run job -- cleanup --dry-run  # report what a job would change; writes nothing
 ```
 
 `npm run search` prints every candidate with its features (vector and text rank, relevance, recency, importance,
@@ -77,6 +80,49 @@ Read-only: there are no write routes. Retrieved text is untrusted data and carri
 Production sign-in uses Firebase ID tokens (`MEMORY_API_TOKEN_VERIFIER=firebase`, `FIREBASE_PROJECT_ID`) with an
 allow-list (`MEMORY_API_ALLOWED_EMAILS`, `MEMORY_API_ALLOWED_EMAIL_DOMAINS`, `MEMORY_API_ADMIN_EMAILS`).
 
+## Background jobs
+
+Eight jobs run on one framework (`JobRunner`): a lease per job and workspace (two runners never overlap), a `job_runs`
+record, `system.job_run` / `system.job_failed` events, and structured logs with the trace id. Every job is
+idempotent (running it twice gives the same result), never hard-deletes (memories move between `active`,
+`superseded` and `tombstoned`), audits its changes with `memory.*` events whose details hold ids, counts and
+scores (never memory text), and honours a dry-run mode that computes and reports but writes nothing.
+
+| Job | What it does | Audit action |
+| --- | --- | --- |
+| `consolidate` | clusters episodic memories by vector similarity inside a time window, summarises each cluster into one semantic memory with the LLM (JSON mode, schema-checked), links the sources and supersedes them | `memory.consolidated` |
+| `promote` | semantic to procedural, or to super, once count, confidence, age and approvals/rejections (the strongest preference signal) pass the thresholds | `memory.promoted` |
+| `collapse` | merges memories that mean the same thing; raises confidence on reinforcement (new `supports`), lowers it on contradiction | `memory.collapsed`, `memory.confidence_adjusted` |
+| `contradictions` | resolves opposite-stance pairs by recency, evidence strength and source; when the margin is too small both stay, linked `contradicts` | `memory.contradiction_resolved`, `memory.contradiction_linked` |
+| `reembed` | moves every active memory to the configured embedder model and version in batches, with no downtime (staged vector, then atomic cutover) | `memory.reembedded` |
+| `usage-feedback` | resolves each retrieval's outcome (approved, rejected, none) from the observations of its trace and moves the memories' learned `usefulness`, exactly once per retrieval | `memory.usage_updated` |
+| `cleanup` | tombstones expired working memories and stale low-importance items | `memory.tombstoned` |
+| `decay` | lowers confidence and importance over time (configured by `DECAY_*` env) | `memory.decayed` |
+
+**Rules and thresholds live in the database, not in code.** The table `job_configs` holds immutable, versioned
+JSON per (workspace, job); workspace `*` is the global version and a workspace with its own active version uses
+that instead. The first run of a job (not a dry run) seeds the built-in defaults as version 1; publishing a new
+version retires the previous one and keeps the history. Every run and audit event records the `configVersion` it used.
+
+```bash
+npm run job-config -- seed                                  # defaults as version 1 where none exists
+npm run job-config -- show promote                          # the active version
+npm run job-config -- history promote --workspace ws-123    # every version
+npm run job-config -- publish promote promote.json --note "stricter super promotion"
+```
+
+Run a job once, for every workspace or one, with the same lease as the scheduled run:
+
+```bash
+npm run job -- consolidate --dry-run                # report only
+npm run job -- reembed --workspace ws-123
+```
+
+Scheduling and defaults come from env (see `.env.example`): `JOBS_ENABLED` picks the jobs the process schedules,
+`<JOB>_INTERVAL_MS` the cadence, `JOBS_DRY_RUN=true` makes every run a dry run, `JOBS_BATCH_SIZE` and
+`JOBS_LLM_MAX_ATTEMPTS` bound the work. Changing the embedder model: see the re-embed rollout order in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#background-jobs).
+
 ## Configuration
 
 Everything is configured through environment variables; `.env.example` lists them with safe defaults and
@@ -93,7 +139,9 @@ start in production unless explicitly allowed.
 Memory emits audit events with the same emitter, transactional outbox, relay and Redis Streams publisher as
 proba-audit (copied with identical interfaces: `createOutboxAuditEmitter`, `createBusAuditEmitter`,
 `OutboxStore`, `OutboxRelay`, `EventBus`; `AUDIT_TRANSPORT=outbox|bus`). Actions: `memory.ingested`,
-`memory.consolidated`, `memory.retrieved`, `memory.decayed`, plus `system.*` lifecycle events. Details hold ids,
+`memory.consolidated`, `memory.retrieved`, `memory.decayed`, `memory.promoted`, `memory.collapsed`,
+`memory.confidence_adjusted`, `memory.contradiction_resolved`, `memory.contradiction_linked`, `memory.reembedded`,
+`memory.usage_updated`, `memory.tombstoned`, plus `system.*` lifecycle events. Details hold ids,
 counts and lengths, never memory text. Types come from `@smallseedlabs/proba-protocol` (pinned to v0.3.3).
 
 Audit events with the optional admin-only `content` field are the primary source of conversation text;
@@ -107,7 +155,7 @@ packages/core        domain, ports, write path, retrieval, audit emitter/outbox/
 packages/adapters    Postgres, Redis Streams, embedder and LLM clients, sources, auth, in-process adapters
 apps/memory-api      read API and operator search CLI
 apps/memory-ingestor sources to write path, seed CLI
-apps/memory-jobs     scheduler and runner, decay job, run-job CLI
+apps/memory-jobs     scheduler and runner, the eight jobs, versioned job config, run-job and job-config CLIs
 migrations/postgres  numbered SQL migrations
 docs                 ARCHITECTURE.md, openapi.yaml
 ```
@@ -129,6 +177,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md). License
 
 ## Not built yet
 
-Planned and prepared by extension points only: more background jobs (M2: consolidation, promotion to super,
-contradiction resolution, re-embedding, usage feedback, cleanup), the evaluation harness (M3) and the portal
-screens (M4). The outcome linker is an interface with a no-op default.
+Planned and prepared by extension points only: the evaluation harness (M3) and the portal screens (M4). The outcome
+linker is an interface with a no-op default.

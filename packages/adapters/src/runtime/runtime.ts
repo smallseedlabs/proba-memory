@@ -7,6 +7,8 @@ import {
   type AuditEmitter,
   type Clock,
   type Embedder,
+  type EmbeddingMigrationStore,
+  type JobConfigStore,
   type EventBus,
   type IdGenerator,
   type JobRunStore,
@@ -33,7 +35,7 @@ export interface RuntimeNeeds {
   llm?: boolean;
   /** Scoring profiles, retrieval log, token counter. */
   retrieval?: boolean;
-  /** Job run store, scheduler, outcome linker. */
+  /** Job run store, job config store, embedding migration store, scheduler, outcome linker. */
   jobs?: boolean;
 }
 
@@ -72,6 +74,8 @@ export interface Runtime {
   tokens: TokenCounter;
   /** Needs `jobs`. */
   jobRuns: JobRunStore;
+  jobConfigs: JobConfigStore;
+  embeddingMigration: EmbeddingMigrationStore;
   scheduler: JobScheduler;
   outcomes: OutcomeLinker;
   registries: Registries;
@@ -120,6 +124,8 @@ export async function createRuntime(config: AppConfig, options: CreateRuntimeOpt
   const logStore = needs.retrieval ? track(await registries.retrievalLogStore.create(a.retrievalLogStore, deps)) : undefined;
   const tokens = needs.retrieval ? await registries.tokenCounter.create(a.tokenCounter, deps) : undefined;
   const jobRuns = needs.jobs ? track(await registries.jobRunStore.create(a.jobRunStore, deps)) : undefined;
+  const jobConfigs = needs.jobs ? track(await registries.jobConfigStore.create(a.jobConfigStore, deps)) : undefined;
+  const embeddingMigration = needs.jobs ? track(await registries.embeddingMigrationStore.create(a.embeddingMigrationStore, deps)) : undefined;
   const scheduler = needs.jobs ? await registries.jobScheduler.create(a.jobScheduler, deps) : undefined;
   const outcomes = needs.jobs ? await registries.outcomeLinker.create(a.outcomeLinker, deps) : undefined;
 
@@ -168,6 +174,12 @@ export async function createRuntime(config: AppConfig, options: CreateRuntimeOpt
     },
     get jobRuns() {
       return jobRuns ?? notCreated('job run store', 'jobs')();
+    },
+    get jobConfigs() {
+      return jobConfigs ?? notCreated('job config store', 'jobs')();
+    },
+    get embeddingMigration() {
+      return embeddingMigration ?? notCreated('embedding migration store', 'jobs')();
     },
     get scheduler() {
       return scheduler ?? notCreated('job scheduler', 'jobs')();

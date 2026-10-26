@@ -268,6 +268,24 @@ export function runMemoryStoreContract(name: string, factory: () => Promise<Memo
       expect(await store.getObservation(b, o.id)).toBeNull();
     });
 
+    it('lists the observations of a workspace by trace id, oldest first, and never across workspaces', async () => {
+      const { store } = await make();
+      const a = uniqueName('wsA');
+      const b = uniqueName('wsB');
+      const t1 = randomUUID();
+      const t2 = randomUUID();
+      const late = makeObservation(a, { traceId: t1, occurredAt: '2026-10-25T12:00:00.000Z' });
+      const early = makeObservation(a, { traceId: t1, occurredAt: '2026-10-25T10:00:00.000Z' });
+      const other = makeObservation(a, { traceId: t2 });
+      const elsewhere = makeObservation(b, { traceId: t1 });
+      for (const o of [late, early, other, elsewhere]) await store.claimObservation(o, NOW);
+      expect((await store.listObservationsByTrace(a, [t1])).map((o) => o.id)).toEqual([early.id, late.id]);
+      expect((await store.listObservationsByTrace(a, [t1, t2])).map((o) => o.id).sort()).toEqual([early.id, late.id, other.id].sort());
+      expect((await store.listObservationsByTrace(b, [t1])).map((o) => o.id)).toEqual([elsewhere.id]);
+      expect(await store.listObservationsByTrace(a, [])).toEqual([]);
+      expect(await store.listObservationsByTrace(a, [randomUUID()])).toEqual([]);
+    });
+
     it('records processing failures and keeps the observation pending', async () => {
       const { store } = await make();
       const ws = uniqueName('ws');

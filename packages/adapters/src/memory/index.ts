@@ -8,3 +8,4 @@ export * from './job-run-store.js';
 export * from './outcome-linker.js';
 export * from './token-counter.js';
 export * from './text-search.js';
+export * from './job-config-store.js';

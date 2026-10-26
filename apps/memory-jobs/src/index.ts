@@ -1,10 +1,10 @@
 import { runService } from '@smallseedlabs/proba-memory-core';
 import { createRuntime, type Runtime } from '@smallseedlabs/proba-memory-adapters';
-import { createJobs } from './jobs/index.js';
+import { createJobDeps, createJobs, jobNeeds } from './jobs/index.js';
 import { createJobRunner } from './runner.js';
 
 /**
- * memory-jobs: runs the background jobs on a schedule (M1: decay) and keeps the audit outbox flowing.
+ * memory-jobs: runs the background jobs on a schedule (decay and the M2 jobs: consolidate, promote, collapse, contradictions, reembed, usage-feedback, cleanup) and keeps the audit outbox flowing.
  * Serves /health only. To run one job once from the command line: `npm run job -- decay`.
  */
 let runtime: Runtime | undefined;
@@ -15,11 +15,11 @@ runService({
   name: 'memory-jobs',
   defaultPort: 3202,
   async onStart({ config, logger }) {
-    const rt = await createRuntime(config, { service: config.service.name, logger, needs: { jobs: true } });
+    const rt = await createRuntime(config, { service: config.service.name, logger, needs: jobNeeds(config.jobs.enabled) });
     runtime = rt;
     await rt.store.ping();
-    const jobs = createJobs(config, config.service.name);
-    if (jobs.length === 0) throw new Error('JOBS_ENABLED is empty: name at least one job (decay)');
+    const jobs = createJobs(config, config.service.name, createJobDeps(rt, config.jobs.enabled));
+    if (jobs.length === 0) throw new Error('JOBS_ENABLED is empty: name at least one job (see JOBS_ENABLED in .env.example)');
     runner = createJobRunner(rt);
     for (const job of jobs) {
       rt.scheduler.register({ name: job.name, intervalMs: job.intervalMs, run: async (trigger) => void (await runner!.runJob(job, trigger)) });

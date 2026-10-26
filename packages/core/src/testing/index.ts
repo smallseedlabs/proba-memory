@@ -17,6 +17,8 @@ export * from './token-counter.contract.js';
 export * from './scoring-profile-store.contract.js';
 export * from './retrieval-log-store.contract.js';
 export * from './job-run-store.contract.js';
+export * from './job-config-store.contract.js';
+export * from './embedding-migration-store.contract.js';
 export * from './job-scheduler.contract.js';
 export * from './outcome-linker.contract.js';
 export * from './content-source.contract.js';
