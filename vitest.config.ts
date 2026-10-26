@@ -10,6 +10,7 @@ export default defineConfig({
       '@smallseedlabs/proba-memory-scoring': src('./packages/scoring/src/index.ts'),
       '@smallseedlabs/proba-memory-core/testing': src('./packages/core/src/testing/index.ts'),
       '@smallseedlabs/proba-memory-core': src('./packages/core/src/index.ts'),
+      '@smallseedlabs/proba-memory-adapters/testing': src('./packages/adapters/src/testing.ts'),
       '@smallseedlabs/proba-memory-adapters': src('./packages/adapters/src/index.ts'),
     },
   },

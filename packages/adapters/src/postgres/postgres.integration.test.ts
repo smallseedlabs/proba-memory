@@ -19,7 +19,7 @@ import { PostgresOutboxStore } from './outbox-store.js';
 import { PostgresScoringProfileStore } from './profile-store.js';
 import { PostgresRetrievalLogStore } from './retrieval-log-store.js';
 import { createPgPool } from './pool.js';
-import { getTestPool, testDatabaseUrl, truncateOutbox, TEST_DIMENSION } from './test-db.testing.js';
+import { getTestPool, testDatabaseUrl, truncateOutbox, TEST_DIMENSION } from './test-db.js';
 import { PostgresVectorIndex } from './vector-index.js';
 
 const pool = await getTestPool();

@@ -114,8 +114,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   const ids = new SequentialIdGenerator();
   const logger = new MemoryLogger();
   const memoryStore = options.store ?? new InMemoryMemoryStore();
-  const index = options.index ?? new InMemoryVectorIndex(memoryStore as InMemoryMemoryStore, DIMENSION);
-  const embedder = new HashEmbedder({ dimension: DIMENSION, nodeEnv: 'test', allowLocal: false });
+  const index = options.index ?? new InMemoryVectorIndex(memoryStore as InMemoryMemoryStore, config.postgres.embeddingDimension);
+  const embedder = new HashEmbedder({ dimension: config.postgres.embeddingDimension, nodeEnv: 'test', allowLocal: false });
   const profiles = new InMemoryScoringProfileStore(clock);
   await profiles.ensureDefault();
   const bus = new InMemoryEventBus(clock);
