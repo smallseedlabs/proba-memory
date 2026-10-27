@@ -7,18 +7,31 @@ import {
   type AppConfig,
   type AuditEmitter,
   type Clock,
+  type JobRunStore,
   type Logger,
   type MemoryStore,
   type RateLimiter,
   type RetrievalContext,
+  type RetrievalLogStore,
   type RetrievalService,
   type ScoringProfileStore,
   type TokenVerifier,
 } from '@smallseedlabs/proba-memory-core';
 import { authorize, type Role, type Session } from './authorization.js';
 import { ApiError } from './http/errors.js';
-import { API_LIMITS, listQuerySchema, memoryParamsSchema, noQuerySchema, parseWith, searchBodySchema, toMemoryFilter } from './http/schemas.js';
-import { toLinkView, toMemoryView, toProfileView } from './http/views.js';
+import {
+  API_LIMITS,
+  jobRunsQuerySchema,
+  listQuerySchema,
+  memoryParamsSchema,
+  memoryRetrievalsQuerySchema,
+  noQuerySchema,
+  parseWith,
+  retrievalParamsSchema,
+  searchBodySchema,
+  toMemoryFilter,
+} from './http/schemas.js';
+import { toJobRunView, toLinkView, toMemoryRetrievalView, toMemoryView, toProfileView, toRetrievalRecordView } from './http/views.js';
 
 export const TRACE_HEADER = 'X-Trace-Id';
 
@@ -47,6 +60,10 @@ export interface ServerDeps {
   profiles: ScoringProfileStore;
   /** Retrieval and read auditing. Every read is recorded as memory.retrieved; if that fails the read is refused (fails closed). */
   retrieval: RetrievalService;
+  /** Retrieval log for admin reads of past searches. */
+  logStore: RetrievalLogStore;
+  /** Job run history for admin operations screens. */
+  jobRuns: JobRunStore;
   /** Used for denials, errors and lifecycle events: a hiccup must not make things worse. */
   bestEffortEmitter: AuditEmitter;
   readiness: ReadinessCheck[];
@@ -360,6 +377,58 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
         const profiles = await deps.profiles.list(session.workspaceId);
         await deps.retrieval.recordRead(contextOf(request, session), 'profiles', { count: profiles.length });
         return { profiles: profiles.map((p) => toProfileView(p, session.role)) };
+      });
+
+      v1.get('/retrievals/:id', async (request) => {
+        const session = need(request);
+        await requireAdmin(request, session, 'Reading a retrieval log');
+        parseWith(noQuerySchema, request.query);
+        const { id } = parseWith(retrievalParamsSchema, request.params, 'path');
+        const entry = await deps.logStore.get(session.workspaceId, id);
+        await deps.retrieval.recordRead(contextOf(request, session), 'retrieval', { found: entry !== null }, entry ? [entry.id] : []);
+        if (!entry) throw new ApiError(404, 'not_found', 'There is no retrieval with this id.');
+        return toRetrievalRecordView(entry);
+      });
+
+      v1.get('/memories/:id/retrievals', async (request) => {
+        const session = need(request);
+        await requireAdmin(request, session, 'Listing retrievals for a memory');
+        const { id } = parseWith(memoryParamsSchema, request.params, 'path');
+        const q = parseWith(memoryRetrievalsQuerySchema, request.query);
+        const memory = await deps.store.getMemory(session.workspaceId, id);
+        if (!memory) {
+          await deps.retrieval.recordRead(contextOf(request, session), 'memory_retrievals', { found: false }, []);
+          throw new ApiError(404, 'not_found', 'There is no memory with this id.');
+        }
+        const entries = await deps.logStore.listByMemoryId(session.workspaceId, id, { limit: q.limit });
+        await deps.retrieval.recordRead(
+          contextOf(request, session),
+          'memory_retrievals',
+          { count: entries.length },
+          [id, ...entries.map((e) => e.id)]
+        );
+        return {
+          retrievals: entries.map((e) => toMemoryRetrievalView(e, id)).filter((v): v is NonNullable<typeof v> => v !== null),
+        };
+      });
+
+      v1.get('/jobs/runs', async (request) => {
+        const session = need(request);
+        await requireAdmin(request, session, 'Listing job runs');
+        const q = parseWith(jobRunsQuerySchema, request.query);
+        const runs = await deps.jobRuns.list({
+          workspaceId: session.workspaceId,
+          ...(q.job !== undefined ? { jobName: q.job } : {}),
+          ...(q.status !== undefined ? { status: q.status } : {}),
+          limit: q.limit,
+        });
+        await deps.retrieval.recordRead(
+          contextOf(request, session),
+          'job_runs',
+          { count: runs.length, ...(q.job ? { job: q.job } : {}), ...(q.status ? { status: q.status } : {}) },
+          runs.map((r) => r.id)
+        );
+        return { runs: runs.map(toJobRunView) };
       });
     },
     { prefix: '/v1' }

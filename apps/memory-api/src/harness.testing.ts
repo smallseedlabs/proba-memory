@@ -25,6 +25,7 @@ import {
   ApproxTokenCounter,
   HashEmbedder,
   InMemoryEventBus,
+  InMemoryJobRunStore,
   InMemoryMemoryStore,
   InMemoryRateLimiter,
   InMemoryRetrievalLogStore,
@@ -36,6 +37,7 @@ import {
 } from '@smallseedlabs/proba-memory-adapters';
 import type { OutgoingHttpHeaders } from 'node:http';
 import type { FastifyInstance } from 'fastify';
+import type { JobRunStore, RetrievalLogStore } from '@smallseedlabs/proba-memory-core';
 import { buildServer, type ReadinessCheck } from './server.js';
 
 export const TOPIC = 'proba.audit.events';
@@ -99,6 +101,8 @@ export interface Harness {
   bus: InMemoryEventBus;
   logger: MemoryLogger;
   clock: ManualClock;
+  logStore: RetrievalLogStore;
+  jobRuns: JobRunStore;
   /** Insert memories (with vectors from the embedder) into a workspace and index them. */
   seed(workspaceId: string, items: Partial<MemoryInsert>[]): Promise<Memory[]>;
   get(path: string, token?: string | null, headers?: Record<string, string>): Promise<{ status: number; body: any; headers: OutgoingHttpHeaders }>;
@@ -118,6 +122,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   const embedder = new HashEmbedder({ dimension: config.postgres.embeddingDimension, nodeEnv: 'test', allowLocal: false });
   const profiles = new InMemoryScoringProfileStore(clock);
   await profiles.ensureDefault();
+  const logStore = new InMemoryRetrievalLogStore();
+  const jobRuns = new InMemoryJobRunStore();
   const bus = new InMemoryEventBus(clock);
   const limiter = options.limiter ?? new InMemoryRateLimiter(clock);
   const emitterDeps = { bus, topic: TOPIC, service: 'memory-api', defaultWorkspaceId: WORKSPACE, clock, ids, logger };
@@ -127,7 +133,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     index,
     embedder,
     profiles,
-    logStore: new InMemoryRetrievalLogStore(),
+    logStore,
     tokens: new ApproxTokenCounter(),
     emitter: options.emitter ? options.emitter(strict) : strict,
     clock,
@@ -146,8 +152,13 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     store: memoryStore,
     profiles,
     retrieval,
+    logStore,
+    jobRuns,
     bestEffortEmitter: createBusAuditEmitter({ ...emitterDeps, failureMode: 'swallow' }),
-    readiness: options.readiness ?? [{ name: 'memoryStore', check: () => memoryStore.ping() }],
+    readiness: options.readiness ?? [
+      { name: 'memoryStore', check: () => memoryStore.ping() },
+      { name: 'jobRuns', check: () => jobRuns.ping() },
+    ],
   });
 
   const parse = (res: { json(): unknown; body: string }): unknown => {
@@ -169,6 +180,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     bus,
     logger,
     clock,
+    logStore,
+    jobRuns,
     async seed(workspaceId, items) {
       const out: Memory[] = [];
       for (const item of items) {

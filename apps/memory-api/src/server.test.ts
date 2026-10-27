@@ -22,7 +22,7 @@ describe('liveness and readiness', () => {
     expect((await h.get('/health', null)).body).toEqual({ status: 'ok', service: 'memory-api' });
     const ready = await h.get('/ready', null);
     expect(ready.status).toBe(200);
-    expect(ready.body).toEqual({ status: 'ready', checks: { memoryStore: 'ok' } });
+    expect(ready.body).toEqual({ status: 'ready', checks: { memoryStore: 'ok', jobRuns: 'ok' } });
   });
 
   it('reports 503 with the failing check name only', async () => {
@@ -317,6 +317,122 @@ describe('GET /v1/profiles', () => {
     expect(viewer.body.profiles[0]).not.toHaveProperty('config');
     const admin = await h.get('/v1/profiles', TOKENS.admin);
     expect(admin.body.profiles[0].config.weights).toMatchObject({ relevance: 0.5 });
+  });
+});
+
+describe('admin retrieval and job-run reads', () => {
+  beforeEach(async () => {
+    h = await make();
+  });
+
+  it('refuses viewers with 403 on retrievals, memory retrievals and job runs', async () => {
+    const memoryId = randomUUID();
+    for (const path of [
+      `/v1/retrievals/${randomUUID()}`,
+      `/v1/memories/${memoryId}/retrievals`,
+      '/v1/jobs/runs',
+    ]) {
+      const res = await h.get(path, TOKENS.viewer);
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('insufficient_role');
+    }
+  });
+
+  it('returns a retrieval record for admins, 404 for missing, and audits the read', async () => {
+    const { makeLogEntry } = await import('@smallseedlabs/proba-memory-core/testing');
+    const entry = makeLogEntry(WORKSPACE, {
+      outcome: { verdict: 'approved', observationId: randomUUID(), resolvedAt: '2026-10-26T11:00:00.000Z' },
+    });
+    await h.logStore.append(entry);
+    await h.logStore.append(makeLogEntry(FOREIGN_WORKSPACE, { id: entry.id }));
+
+    await h.emitted();
+    const ok = await h.get(`/v1/retrievals/${entry.id}`, TOKENS.admin);
+    expect(ok.status).toBe(200);
+    expect(ok.body).toMatchObject({
+      id: entry.id,
+      traceId: entry.traceId,
+      queryText: entry.queryText,
+      profile: { name: 'default', version: 1, served: 'active', shadowVersion: null },
+      outcome: { verdict: 'approved', resolvedAt: '2026-10-26T11:00:00.000Z' },
+    });
+    expect(ok.body.outcome).not.toHaveProperty('observationId');
+    expect(ok.body).not.toHaveProperty('workspaceId');
+
+    const [event] = (await h.emitted()).filter((e) => e.action === 'memory.retrieved');
+    expect(event.details).toMatchObject({ operation: 'retrieval', found: true });
+
+    expect((await h.get(`/v1/retrievals/${randomUUID()}`, TOKENS.admin)).status).toBe(404);
+  });
+
+  it('lists retrievals for a memory and keeps other workspaces out', async () => {
+    const { makeLogEntry } = await import('@smallseedlabs/proba-memory-core/testing');
+    const [memory] = await h.seed(WORKSPACE, [{ content: 'Banner headlines stay short.' }]);
+    const hit = makeLogEntry(WORKSPACE, {
+      createdAt: '2026-10-26T10:00:00.000Z',
+      results: [{ id: memory!.id, score: 0.8, position: 1 }],
+      outcome: { verdict: 'rejected', resolvedAt: '2026-10-26T12:00:00.000Z' },
+    });
+    const foreign = makeLogEntry(FOREIGN_WORKSPACE, {
+      results: [{ id: memory!.id, score: 0.9, position: 1 }],
+    });
+    await h.logStore.append(hit);
+    await h.logStore.append(foreign);
+
+    const res = await h.get(`/v1/memories/${memory!.id}/retrievals`, TOKENS.admin);
+    expect(res.status).toBe(200);
+    expect(res.body.retrievals).toEqual([
+      expect.objectContaining({
+        retrievalId: hit.id,
+        position: 1,
+        score: 0.8,
+        outcome: 'rejected',
+        profile: { name: 'default', version: 1 },
+      }),
+    ]);
+    expect((await h.get(`/v1/memories/${randomUUID()}/retrievals`, TOKENS.admin)).status).toBe(404);
+  });
+
+  it('lists job runs with filters and never leaks workspaceId', async () => {
+    const started = await h.jobRuns.start({
+      id: randomUUID(),
+      jobName: 'decay',
+      workspaceId: WORKSPACE,
+      traceId: randomUUID(),
+      trigger: 'schedule',
+      startedAt: '2026-10-26T08:00:00.000Z',
+      staleAfterMs: 60_000,
+    });
+    await h.jobRuns.finishSuccess(started!.id, { processed: 3, changed: 1, details: { batches: 1 } }, '2026-10-26T08:00:05.000Z');
+    await h.jobRuns.start({
+      id: randomUUID(),
+      jobName: 'consolidate',
+      workspaceId: WORKSPACE,
+      traceId: randomUUID(),
+      trigger: 'manual',
+      startedAt: '2026-10-26T09:00:00.000Z',
+      staleAfterMs: 60_000,
+    });
+    await h.jobRuns.start({
+      id: randomUUID(),
+      jobName: 'decay',
+      workspaceId: FOREIGN_WORKSPACE,
+      traceId: randomUUID(),
+      trigger: 'schedule',
+      startedAt: '2026-10-26T10:00:00.000Z',
+      staleAfterMs: 60_000,
+    });
+
+    const all = await h.get('/v1/jobs/runs?limit=100', TOKENS.admin);
+    expect(all.status).toBe(200);
+    expect(all.body.runs).toHaveLength(2);
+    expect(all.body.runs.every((r: { workspaceId?: string }) => r.workspaceId === undefined)).toBe(true);
+
+    const decay = await h.get('/v1/jobs/runs?job=decay&status=succeeded', TOKENS.admin);
+    expect(decay.body.runs).toEqual([expect.objectContaining({ id: started!.id, jobName: 'decay', status: 'succeeded', processed: 3 })]);
+
+    expect((await h.get('/v1/jobs/runs?limit=201', TOKENS.admin)).status).toBe(400);
+    expect((await h.get('/v1/jobs/runs?bogus=1', TOKENS.admin)).status).toBe(400);
   });
 });
 

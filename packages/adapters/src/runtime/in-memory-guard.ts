@@ -26,6 +26,8 @@ export interface InMemoryGuardOptions {
   includeRetrieval?: boolean;
   /** Job ports (run store, job config, embedding migration, outcome linker) are only created by memory-jobs. */
   includeJobs?: boolean;
+  /** Job run store alone (memory-api admin list of runs). */
+  includeJobRunStore?: boolean;
 }
 
 /** The config keys (for example `MEMORY_STORE`) whose selected adapter is the in-memory one. */
@@ -40,6 +42,8 @@ export function selectedInMemoryAdapters(config: AppConfig, options: InMemoryGua
   if (options.includeRetrieval) candidates.push(['SCORING_PROFILE_STORE', a.scoringProfileStore], ['RETRIEVAL_LOG_STORE', a.retrievalLogStore]);
   if (options.includeJobs) {
     candidates.push(['JOB_RUN_STORE', a.jobRunStore], ['JOB_CONFIG_STORE', a.jobConfigStore], ['EMBEDDING_MIGRATION_STORE', a.embeddingMigrationStore], ['OUTCOME_LINKER', a.outcomeLinker]);
+  } else if (options.includeJobRunStore) {
+    candidates.push(['JOB_RUN_STORE', a.jobRunStore]);
   }
   if (options.includeRateLimiter) candidates.push(['MEMORY_API_RATE_LIMITER', a.rateLimiter]);
   return candidates.filter(([, adapter]) => adapter === IN_MEMORY_ADAPTER_NAME).map(([key]) => key);

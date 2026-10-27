@@ -85,8 +85,11 @@ export function runJobRunStoreContract(name: string, factory: () => Promise<JobR
       const b = start(ws, { jobName: 'other', startedAt: '2026-10-26T09:00:00.000Z' });
       await store.start(a);
       await store.start(b);
+      await store.finishSuccess(a.id, { processed: 1, changed: 0 }, '2026-10-26T08:01:00.000Z');
       expect((await store.list({ workspaceId: ws })).map((r) => r.id)).toEqual([b.id, a.id]);
       expect((await store.list({ workspaceId: ws, jobName: 'decay' })).map((r) => r.id)).toEqual([a.id]);
+      expect((await store.list({ workspaceId: ws, status: 'succeeded' })).map((r) => r.id)).toEqual([a.id]);
+      expect((await store.list({ workspaceId: ws, status: 'running' })).map((r) => r.id)).toEqual([b.id]);
       expect(await store.list({ workspaceId: ws, limit: 1 })).toHaveLength(1);
     });
 

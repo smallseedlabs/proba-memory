@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import type { JobResult, JobRun, JobRunStore, StartJobRun } from '@smallseedlabs/proba-memory-core';
+import type { JobResult, JobRun, JobRunStatus, JobRunStore, StartJobRun } from '@smallseedlabs/proba-memory-core';
 import { isUuid } from '@smallseedlabs/proba-memory-core';
 import { iso, isoOrNull, withTransaction } from './pool.js';
 
@@ -71,7 +71,7 @@ export class PostgresJobRunStore implements JobRunStore {
     return this.finish(id, `status = 'failed', error = $3`, [iso(finishedAt), error.slice(0, 2000)]);
   }
 
-  async list(options: { jobName?: string; workspaceId?: string; limit?: number } = {}): Promise<JobRun[]> {
+  async list(options: { jobName?: string; workspaceId?: string; status?: JobRunStatus; limit?: number } = {}): Promise<JobRun[]> {
     const params: unknown[] = [];
     const where: string[] = [];
     if (options.jobName) {
@@ -81,6 +81,10 @@ export class PostgresJobRunStore implements JobRunStore {
     if (options.workspaceId) {
       params.push(options.workspaceId);
       where.push(`workspace_id = $${params.length}`);
+    }
+    if (options.status) {
+      params.push(options.status);
+      where.push(`status = $${params.length}`);
     }
     params.push(Math.min(options.limit ?? 50, 500));
     const r = await this.pool.query(

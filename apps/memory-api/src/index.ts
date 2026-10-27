@@ -31,7 +31,7 @@ async function main(): Promise<void> {
   const runtime = await createRuntime(config, {
     service: config.service.name,
     logger,
-    needs: { embedder: true, retrieval: true, rateLimiter: true, llm: config.retrieval.rerankEnabled },
+    needs: { embedder: true, retrieval: true, rateLimiter: true, jobRuns: true, llm: config.retrieval.rerankEnabled },
   });
   const verifier = await runtime.registries.tokenVerifier.create(config.adapters.tokenVerifier, runtime.deps);
   const limiter = await runtime.registries.rateLimiter.create(config.adapters.rateLimiter, runtime.deps);
@@ -56,10 +56,13 @@ async function main(): Promise<void> {
     store: runtime.store,
     profiles: runtime.profiles,
     retrieval: createRetrievalService(runtime),
+    logStore: runtime.logStore,
+    jobRuns: runtime.jobRuns,
     bestEffortEmitter: runtime.lifecycleEmitter,
     readiness: [
       { name: 'memoryStore', check: () => runtime.store.ping() },
       { name: 'eventBus', check: () => runtime.bus.ping() },
+      { name: 'jobRuns', check: () => runtime.jobRuns.ping() },
     ],
   });
 

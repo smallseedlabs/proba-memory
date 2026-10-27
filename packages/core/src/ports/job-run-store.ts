@@ -1,4 +1,4 @@
-import type { JobResult, JobRun, JobTrigger } from '../domain/index.js';
+import type { JobResult, JobRun, JobRunStatus, JobTrigger } from '../domain/index.js';
 
 export interface StartJobRun {
   id: string;
@@ -17,7 +17,7 @@ export interface JobRunStore {
   start(run: StartJobRun): Promise<JobRun | null>;
   finishSuccess(id: string, result: JobResult, finishedAt: string): Promise<JobRun>;
   finishFailure(id: string, error: string, finishedAt: string): Promise<JobRun>;
-  list(options?: { jobName?: string; workspaceId?: string; limit?: number }): Promise<JobRun[]>;
+  list(options?: { jobName?: string; workspaceId?: string; status?: JobRunStatus; limit?: number }): Promise<JobRun[]>;
   ping(): Promise<void>;
   close(): Promise<void>;
 }

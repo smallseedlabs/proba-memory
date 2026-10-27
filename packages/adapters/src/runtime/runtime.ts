@@ -38,6 +38,8 @@ export interface RuntimeNeeds {
   retrieval?: boolean;
   /** Job run store, job config store, embedding migration store, scheduler, outcome linker. */
   jobs?: boolean;
+  /** Job run store only (memory-api admin reads of past runs). */
+  jobRuns?: boolean;
   /** The read API's rate limiter (MEMORY_API_RATE_LIMITER) is created by the app; declaring it lets the production guards check it. */
   rateLimiter?: boolean;
 }
@@ -99,7 +101,12 @@ const notCreated = (name: string, need: string) => (): never => {
  */
 export async function createRuntime(config: AppConfig, options: CreateRuntimeOptions): Promise<Runtime> {
   const needs = options.needs ?? {};
-  assertProductionGuards(config, { includeRateLimiter: needs.rateLimiter, includeRetrieval: needs.retrieval, includeJobs: needs.jobs });
+  assertProductionGuards(config, {
+    includeRateLimiter: needs.rateLimiter,
+    includeRetrieval: needs.retrieval,
+    includeJobs: needs.jobs,
+    includeJobRunStore: needs.jobRuns && !needs.jobs,
+  });
   const registries = options.registries ?? createDefaultRegistries();
   const clock = options.clock ?? new SystemClock();
   const ids = options.ids ?? new RandomIdGenerator();
@@ -131,7 +138,7 @@ export async function createRuntime(config: AppConfig, options: CreateRuntimeOpt
   const profiles = needs.retrieval ? track(await registries.scoringProfileStore.create(a.scoringProfileStore, deps)) : undefined;
   const logStore = needs.retrieval ? track(await registries.retrievalLogStore.create(a.retrievalLogStore, deps)) : undefined;
   const tokens = needs.retrieval ? await registries.tokenCounter.create(a.tokenCounter, deps) : undefined;
-  const jobRuns = needs.jobs ? track(await registries.jobRunStore.create(a.jobRunStore, deps)) : undefined;
+  const jobRuns = needs.jobs || needs.jobRuns ? track(await registries.jobRunStore.create(a.jobRunStore, deps)) : undefined;
   const jobConfigs = needs.jobs ? track(await registries.jobConfigStore.create(a.jobConfigStore, deps)) : undefined;
   const embeddingMigration = needs.jobs ? track(await registries.embeddingMigrationStore.create(a.embeddingMigrationStore, deps)) : undefined;
   const scheduler = needs.jobs ? await registries.jobScheduler.create(a.jobScheduler, deps) : undefined;
@@ -181,7 +188,7 @@ export async function createRuntime(config: AppConfig, options: CreateRuntimeOpt
       return tokens ?? notCreated('token counter', 'retrieval')();
     },
     get jobRuns() {
-      return jobRuns ?? notCreated('job run store', 'jobs')();
+      return jobRuns ?? notCreated('job run store', 'jobs or jobRuns')();
     },
     get jobConfigs() {
       return jobConfigs ?? notCreated('job config store', 'jobs')();

@@ -1,4 +1,4 @@
-import type { Memory, MemoryLink } from '@smallseedlabs/proba-memory-core';
+import type { JobRun, Memory, MemoryLink, RetrievalLogEntry } from '@smallseedlabs/proba-memory-core';
 import type { ScoringProfile } from '@smallseedlabs/proba-memory-scoring';
 import type { Role } from '../authorization.js';
 
@@ -98,5 +98,99 @@ export function toProfileView(p: ScoringProfile, role: Role): ProfileView {
     description: p.description,
     createdAt: p.createdAt,
     ...(role === 'admin' ? { config: p.config } : {}),
+  };
+}
+
+/** One retrieval log entry as the portal expects it (administrators only). */
+export interface RetrievalRecordView {
+  id: string;
+  traceId: string;
+  createdAt: string;
+  queryText: string;
+  filter: Record<string, unknown>;
+  profile: { name: string; version: number; served: 'active' | 'canary'; shadowVersion: number | null };
+  results: { id: string; score: number; position: number }[];
+  candidates: RetrievalLogEntry['candidates'];
+  stats: RetrievalLogEntry['stats'];
+  outcome: { verdict: 'approved' | 'rejected' | 'none'; resolvedAt: string } | null;
+}
+
+export function toRetrievalRecordView(entry: RetrievalLogEntry): RetrievalRecordView {
+  return {
+    id: entry.id,
+    traceId: entry.traceId,
+    createdAt: entry.createdAt,
+    queryText: entry.queryText,
+    filter: entry.filter as Record<string, unknown>,
+    profile: {
+      name: entry.profileName,
+      version: entry.profileVersion,
+      served: entry.profileServed,
+      shadowVersion: entry.shadowProfileVersion,
+    },
+    results: entry.results,
+    candidates: entry.candidates,
+    stats: entry.stats,
+    outcome: entry.outcome
+      ? { verdict: entry.outcome.verdict, resolvedAt: entry.outcome.resolvedAt }
+      : null,
+  };
+}
+
+/** A retrieval that returned one memory (administrators only). */
+export interface MemoryRetrievalView {
+  retrievalId: string;
+  traceId: string;
+  createdAt: string;
+  position: number;
+  score: number;
+  profile: { name: string; version: number };
+  outcome: 'approved' | 'rejected' | 'none' | null;
+}
+
+export function toMemoryRetrievalView(entry: RetrievalLogEntry, memoryId: string): MemoryRetrievalView | null {
+  const hit = entry.results.find((r) => r.id === memoryId);
+  if (!hit) return null;
+  return {
+    retrievalId: entry.id,
+    traceId: entry.traceId,
+    createdAt: entry.createdAt,
+    position: hit.position,
+    score: hit.score,
+    profile: { name: entry.profileName, version: entry.profileVersion },
+    outcome: entry.outcome?.verdict ?? null,
+  };
+}
+
+/** A job run as returned to the portal (workspaceId never leaves the server). */
+export interface JobRunView {
+  id: string;
+  jobName: string;
+  traceId: string;
+  trigger: JobRun['trigger'];
+  status: JobRun['status'];
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  processed: number;
+  changed: number;
+  error: string | null;
+  details: Record<string, unknown>;
+}
+
+export function toJobRunView(run: JobRun): JobRunView {
+  return {
+    id: run.id,
+    jobName: run.jobName,
+    traceId: run.traceId,
+    trigger: run.trigger,
+    status: run.status,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    durationMs: run.durationMs,
+    processed: run.processed,
+    changed: run.changed,
+    error: run.error,
+    details: run.details,
   };
 }

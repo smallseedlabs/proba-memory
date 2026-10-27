@@ -12,10 +12,15 @@ import { ApiError } from './errors.js';
 export const API_LIMITS = {
   search: { maxQueryChars: 2000, defaultLimit: 10, maxLimit: 50, maxTokenBudget: 8000 },
   list: { defaultLimit: MEMORY_LIST_DEFAULT_LIMIT, maxLimit: MEMORY_LIST_MAX_LIMIT },
+  retrievals: { defaultLimit: 50, maxLimit: 100 },
+  jobs: { defaultLimit: 50, maxLimit: 200 },
   idMaxLength: 128,
   cursorMaxLength: 512,
   bodyMaxBytes: 32 * 1024,
 } as const;
+
+export const JOB_STATUSES = ['running', 'succeeded', 'failed'] as const;
+export const JOB_TRIGGERS = ['schedule', 'manual'] as const;
 
 export const SOURCE_KINDS = ['audit', 'goal', 'approval', 'thread', 'analytics', 'other'] as const;
 
@@ -91,6 +96,40 @@ export const listQuerySchema = z
 export type ListQuery = z.output<typeof listQuerySchema>;
 
 export const memoryParamsSchema = z.object({ id: z.string().uuid().transform((v) => v.toLowerCase()) }).strict();
+
+export const retrievalParamsSchema = z.object({ id: z.string().uuid().transform((v) => v.toLowerCase()) }).strict();
+
+const retrievalsLimitParam = z.coerce
+  .number()
+  .int()
+  .min(1, 'must be at least 1')
+  .max(API_LIMITS.retrievals.maxLimit, `at most ${API_LIMITS.retrievals.maxLimit}`)
+  .default(API_LIMITS.retrievals.defaultLimit);
+
+export const memoryRetrievalsQuerySchema = z.object({ limit: retrievalsLimitParam }).strict();
+export type MemoryRetrievalsQuery = z.output<typeof memoryRetrievalsQuerySchema>;
+
+const jobsLimitParam = z.coerce
+  .number()
+  .int()
+  .min(1, 'must be at least 1')
+  .max(API_LIMITS.jobs.maxLimit, `at most ${API_LIMITS.jobs.maxLimit}`)
+  .default(API_LIMITS.jobs.defaultLimit);
+
+export const jobRunsQuerySchema = z
+  .object({
+    job: z
+      .string()
+      .trim()
+      .min(1)
+      .max(64)
+      .regex(/^[A-Za-z0-9_-]+$/, 'letters, digits, _ and - only')
+      .optional(),
+    status: z.enum(JOB_STATUSES).optional(),
+    limit: jobsLimitParam,
+  })
+  .strict();
+export type JobRunsQuery = z.output<typeof jobRunsQuerySchema>;
 
 export const noQuerySchema = z.object({}).strict();
 

@@ -7,6 +7,8 @@ export interface RetrievalLogStore {
   get(workspaceId: string, id: string): Promise<RetrievalLogEntry | null>;
   /** Newest first. */
   list(workspaceId: string, options?: { limit?: number }): Promise<RetrievalLogEntry[]>;
+  /** Retrievals that returned `memoryId` in `results`, newest first. */
+  listByMemoryId(workspaceId: string, memoryId: string, options?: { limit?: number }): Promise<RetrievalLogEntry[]>;
   /** Entries without an outcome created at or before `createdBefore`, oldest first. */
   listUnresolved(workspaceId: string, options: { createdBefore: string; limit: number }): Promise<RetrievalLogEntry[]>;
   /** Entries with an outcome that was not applied yet, oldest first. */
