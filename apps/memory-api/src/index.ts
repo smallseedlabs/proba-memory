@@ -31,7 +31,7 @@ async function main(): Promise<void> {
   const runtime = await createRuntime(config, {
     service: config.service.name,
     logger,
-    needs: { embedder: true, retrieval: true, llm: config.retrieval.rerankEnabled },
+    needs: { embedder: true, retrieval: true, rateLimiter: true, llm: config.retrieval.rerankEnabled },
   });
   const verifier = await runtime.registries.tokenVerifier.create(config.adapters.tokenVerifier, runtime.deps);
   const limiter = await runtime.registries.rateLimiter.create(config.adapters.rateLimiter, runtime.deps);

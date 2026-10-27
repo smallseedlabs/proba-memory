@@ -319,11 +319,34 @@ Every external dependency is behind a port. The adapter is named in config; the 
 | SourceAdapter | `SOURCES` (list) | **audit**, content | |
 | HubContentSource | `HUB_CONTENT_SOURCE` | dev | the real Hub feed is an open question |
 | TokenVerifier | `MEMORY_API_TOKEN_VERIFIER` | **firebase**, static | static refused in production |
-| RateLimiter | `MEMORY_API_RATE_LIMITER` | **memory**, redis | |
+| RateLimiter | `MEMORY_API_RATE_LIMITER` | **memory**, redis | `redis` shares limits between replicas; `memory` refused in production |
 | AuditEmitter | `AUDIT_TRANSPORT` | **outbox**, bus | see below |
 
 The local stand-ins (`hash`, `scripted`, `dev`, static tokens) refuse to start with `NODE_ENV=production`
 unless explicitly allowed (`ALLOW_LOCAL_EMBEDDER`, `ALLOW_SCRIPTED_LLM`, `ALLOW_DEV_CONTENT_SOURCE`).
+
+### Production guards
+
+With `NODE_ENV=production`, `createRuntime` runs these checks before it creates anything, and the process exits with a
+descriptive error when one fails (`packages/adapters/src/runtime/in-memory-guard.ts`, `production-guards.ts`):
+
+- **No in-memory adapters, ever.** Any port set to `memory` (`MEMORY_STORE`, `VECTOR_INDEX`, `OUTBOX_STORE`, `EVENT_BUS`;
+  for the processes that retrieve `SCORING_PROFILE_STORE` and `RETRIEVAL_LOG_STORE`; for memory-jobs `JOB_RUN_STORE`,
+  `JOB_CONFIG_STORE`, `EMBEDDING_MIGRATION_STORE`, `OUTCOME_LINKER`; for memory-api `MEMORY_API_RATE_LIMITER`) throws
+  `InMemoryAdaptersNotAllowedError`, listing the variables. They lose data on restart and are not shared between replicas.
+  There is no escape hatch: `ALLOW_IN_MEMORY_ADAPTERS=true` is itself refused in production (so a stale opt-in fails loudly)
+  and changes nothing elsewhere, where in-memory adapters are always allowed (tests, local runs).
+- **Redis needs a password.** When `EVENT_BUS=redis-streams` (or `MEMORY_API_RATE_LIMITER=redis` in memory-api) and `REDIS_URL`
+  has no password, `RedisPasswordRequiredError` (the URL is never printed).
+
+Redis connections (event bus, rate limiter) go through one helper, `redisClientOptions` (`packages/adapters/src/redis/connection.ts`):
+`redis://` is plain TCP, `rediss://` is TLS with certificate and host name verification always on (private CA: set
+`NODE_EXTRA_CA_CERTS`); any other scheme is refused. Credentials travel in the URL: `redis://<user>:<password>@host:6379`.
+
+`docker-compose.yml` starts Redis with an ACL user (`REDIS_USER`, `REDIS_PASSWORD`; the anonymous `default` user is off and the
+`@dangerous` commands are denied), requires every password as `${NAME:?set NAME}` (no default), and binds every published port
+to `127.0.0.1`. CI enforces both with `scripts/check-compose-security.mjs`; `scripts/generate-local-env.sh` writes a local `.env`
+with random passwords.
 
 ### Swapping an adapter
 

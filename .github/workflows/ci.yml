@@ -23,6 +23,21 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
+  compose-security:
+    name: Compose Security (loopback ports, no default passwords)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      # Resolves docker-compose.yml for every profile and fails if a published port is not bound to 127.0.0.1,
+      # or a password has a default (only ${NAME:?...} is accepted). Starts no container.
+      - name: Check docker-compose.yml
+        run: node scripts/check-compose-security.mjs
+
   typecheck:
     name: Type Check and Build
     runs-on: ubuntu-latest
@@ -86,36 +101,9 @@ jobs:
   integration-test:
     name: Integration Tests (Postgres + pgvector, Redis)
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          # Throwaway credentials of this CI-only service container.
-          POSTGRES_USER: proba
-          POSTGRES_PASSWORD: proba
-          POSTGRES_DB: proba_memory
-        options: >-
-          --health-cmd "pg_isready -U proba -d proba_memory"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-        ports:
-          - 5432:5432
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
     env:
       NODE_ENV: test
       LOG_LEVEL: warn
-      # Throwaway credentials of the CI-only service containers above.
-      DATABASE_URL: postgresql://proba:proba@localhost:5432/proba_memory
-      REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -123,6 +111,16 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
+      # The services come from docker-compose.yml itself: Postgres with a password and Redis with an ACL user and password,
+      # both on 127.0.0.1. The passwords are random per run (nothing in the repository is a default password).
+      - name: Generate a local .env (random passwords) and load it
+        run: |
+          scripts/generate-local-env.sh
+          echo "::add-mask::$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2)"
+          echo "::add-mask::$(grep '^REDIS_PASSWORD=' .env | cut -d= -f2)"
+          grep -E "^[A-Z_]+=" .env >> "$GITHUB_ENV"
+      - name: Start Postgres and Redis (docker compose)
+        run: docker compose up -d --wait postgres redis
       - name: Apply migrations to the service database (builds first)
         run: npm run migrate
         env:
@@ -138,6 +136,9 @@ jobs:
           name: integration-test-report
           path: test-reports/
           if-no-files-found: ignore
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v
 
   docker:
     name: Docker Build (${{ matrix.target }})

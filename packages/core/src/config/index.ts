@@ -95,6 +95,9 @@ export const envSchema = z.object({
   LLM_EXTRA_BODY: z.string().default(''),
   // The scripted provider (deterministic rules) refuses production unless this is true.
   ALLOW_SCRIPTED_LLM: bool('false'),
+  // Never honoured in production: in-memory adapters are refused there. Setting it to true when NODE_ENV=production is
+  // itself an error (InMemoryAdaptersNotAllowedError), so a stale opt-in cannot go unnoticed.
+  ALLOW_IN_MEMORY_ADAPTERS: bool('false'),
 
   // Write path
   SOURCES: z.string().default('audit'),
@@ -244,6 +247,8 @@ export interface AppConfig {
   isDevelopment: boolean;
   isProduction: boolean;
   isTest: boolean;
+  /** ALLOW_IN_MEMORY_ADAPTERS. Refused when NODE_ENV=production (see InMemoryAdaptersNotAllowedError). */
+  allowInMemoryAdapters: boolean;
   service: { name: string; host: string; port: number };
   log: { level: Env['LOG_LEVEL'] };
   /** Registry names of the selected adapters. */
@@ -421,6 +426,7 @@ export function loadConfig(env: EnvSource = process.env, options: LoadConfigOpti
     isDevelopment: e.NODE_ENV === 'development',
     isProduction: e.NODE_ENV === 'production',
     isTest: e.NODE_ENV === 'test',
+    allowInMemoryAdapters: e.ALLOW_IN_MEMORY_ADAPTERS,
     service: { name: e.SERVICE_NAME ?? options.serviceName ?? 'proba-memory', host: e.HOST, port: e.PORT },
     log: { level: e.LOG_LEVEL },
     adapters: {
