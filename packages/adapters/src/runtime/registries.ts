@@ -183,7 +183,7 @@ export function createDefaultRegistries(): Registries {
     .register('noop', ({ logger }) => new NoopOutcomeLinker(logger))
     .register('memory', () => new InMemoryOutcomeLinker());
 
-  // The Hub does not expose message text yet (docs/ARCHITECTURE.md, "Hub content feed"). Until it does, only the development source exists.
+  // No Hub HTTP content feed: only the development source (local / SOURCES=content). Conversation text comes from audit events.
   const hubContentSource = new AdapterRegistry<HubContentSource, AdapterDeps>('HubContentSource').register(
     'dev',
     ({ config }) =>
