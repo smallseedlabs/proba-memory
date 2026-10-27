@@ -80,8 +80,12 @@ redacted memory and it appears in `GET /v1/memories` and in search results.
 | `POST /v1/memories/search` | hybrid retrieval, scores and trust marker; admins can ask for the candidate table |
 | `GET /v1/memories`, `GET /v1/memories/{id}` | list with cursor, read one with its links |
 | `GET /v1/profiles` | scoring profiles (full configuration for admins) |
+| `GET /v1/retrievals/{id}` | one retrieval log entry (admins only; viewers get 403) |
+| `GET /v1/memories/{id}/retrievals` | retrievals that returned this memory (admins only) |
+| `GET /v1/jobs/runs` | job run history for the workspace (admins only; paginated) |
 
 Read-only: there are no write routes. Retrieved text is untrusted data and carries `trust: "untrusted_data"`.
+Admin retrieval and job-run reads are audited as `memory.retrieved`.
 Production sign-in uses Firebase ID tokens (`MEMORY_API_TOKEN_VERIFIER=firebase`, `FIREBASE_PROJECT_ID`) with an
 allow-list (`MEMORY_API_ALLOWED_EMAILS`, `MEMORY_API_ALLOWED_EMAIL_DOMAINS`, `MEMORY_API_ADMIN_EMAILS`).
 

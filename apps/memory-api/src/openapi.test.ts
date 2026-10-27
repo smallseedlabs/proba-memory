@@ -10,7 +10,8 @@ import { createRequire } from 'node:module';
 import yaml from 'js-yaml';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MEMORY_CATEGORIES, MEMORY_STATUSES } from '@smallseedlabs/proba-memory-core';
-import { API_LIMITS, SOURCE_KINDS, filterBodySchema, listQuerySchema, searchBodySchema } from './http/schemas.js';
+import { makeLogEntry } from '@smallseedlabs/proba-memory-core/testing';
+import { API_LIMITS, SOURCE_KINDS, filterBodySchema, jobRunsQuerySchema, listQuerySchema, searchBodySchema } from './http/schemas.js';
 import { SEED, TOKENS, WORKSPACE, createHarness, type Harness } from './harness.testing.js';
 
 // Both packages are CommonJS: load them the way Node does, whatever the test runner's interop.
@@ -147,6 +148,23 @@ describe('request schemas match the validation code', () => {
   it('the request body cap in the description matches the server limit', () => {
     expect(doc.components.responses.TooLarge.description).toContain(`${API_LIMITS.bodyMaxBytes / 1024} KiB`);
   });
+
+  it('GET /v1/jobs/runs: same parameter names, defaults and caps as jobRunsQuerySchema', () => {
+    const shape = (jobRunsQuerySchema as any).shape as Record<string, any>;
+    const spec = doc.paths['/v1/jobs/runs'].get.parameters.map(resolveRef);
+    expect(spec.map((p: any) => p.name).sort()).toEqual(Object.keys(shape).sort());
+    expect(spec.find((p: any) => p.name === 'limit').schema).toMatchObject({
+      default: API_LIMITS.jobs.defaultLimit,
+      maximum: API_LIMITS.jobs.maxLimit,
+    });
+    expect(shape.limit.safeParse(String(API_LIMITS.jobs.maxLimit)).success).toBe(true);
+    expect(shape.limit.safeParse(String(API_LIMITS.jobs.maxLimit + 1)).success).toBe(false);
+  });
+
+  it('GET /v1/memories/{id}/retrievals: limit cap matches API_LIMITS.retrievals', () => {
+    const limit = doc.paths['/v1/memories/{id}/retrievals'].get.parameters.map(resolveRef).find((p: any) => p.name === 'limit');
+    expect(limit.schema).toMatchObject({ default: API_LIMITS.retrievals.defaultLimit, maximum: API_LIMITS.retrievals.maxLimit });
+  });
 });
 
 describe('real responses conform to the document', () => {
@@ -186,6 +204,39 @@ describe('real responses conform to the document', () => {
       const res = await h.get('/v1/profiles', token);
       for (const p of res.body.profiles) expectValid('Profile', p);
     }
+  });
+
+  it('GET /v1/retrievals/:id, /v1/memories/:id/retrievals, /v1/jobs/runs (admin)', async () => {
+    const entry = makeLogEntry(WORKSPACE, {
+      results: [{ id: someId, score: 0.7, position: 1 }],
+      outcome: { verdict: 'none', resolvedAt: '2026-10-26T12:00:00.000Z' },
+    });
+    await h.logStore.append(entry);
+    const started = await h.jobRuns.start({
+      id: randomUUID(),
+      jobName: 'decay',
+      workspaceId: WORKSPACE,
+      traceId: randomUUID(),
+      trigger: 'schedule',
+      startedAt: '2026-10-26T08:00:00.000Z',
+      staleAfterMs: 60_000,
+    });
+    await h.jobRuns.finishSuccess(started!.id, { processed: 1, changed: 0 }, '2026-10-26T08:00:01.000Z');
+
+    const retrieval = await h.get(`/v1/retrievals/${entry.id}`, TOKENS.admin);
+    expect(retrieval.status).toBe(200);
+    expectValid('RetrievalRecord', retrieval.body);
+
+    const history = await h.get(`/v1/memories/${someId}/retrievals`, TOKENS.admin);
+    expect(history.status).toBe(200);
+    expectValid('MemoryRetrievals', history.body);
+
+    const runs = await h.get('/v1/jobs/runs', TOKENS.admin);
+    expect(runs.status).toBe(200);
+    expectValid('JobRunsPage', runs.body);
+
+    expect((await h.get(`/v1/retrievals/${entry.id}`, TOKENS.viewer)).status).toBe(403);
+    expect((await h.get('/v1/jobs/runs', TOKENS.viewer)).status).toBe(403);
   });
 
   it('every documented error status has the documented error body', async () => {

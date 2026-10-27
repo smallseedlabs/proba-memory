@@ -24,6 +24,17 @@ export class InMemoryRetrievalLogStore implements RetrievalLogStore {
     );
   }
 
+  async listByMemoryId(workspaceId: string, memoryId: string, options: { limit?: number } = {}): Promise<RetrievalLogEntry[]> {
+    return structuredClone(
+      this.entries
+        .map((e, i) => ({ e, i }))
+        .filter(({ e }) => e.workspaceId === workspaceId && e.results.some((r) => r.id === memoryId))
+        .sort((a, b) => (a.e.createdAt === b.e.createdAt ? b.i - a.i : a.e.createdAt < b.e.createdAt ? 1 : -1))
+        .slice(0, options.limit ?? 50)
+        .map(({ e }) => e)
+    );
+  }
+
   async listUnresolved(workspaceId: string, options: { createdBefore: string; limit: number }): Promise<RetrievalLogEntry[]> {
     return structuredClone(
       this.entries

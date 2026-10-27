@@ -1,4 +1,4 @@
-import type { JobResult, JobRun, JobRunStore, StartJobRun } from '@smallseedlabs/proba-memory-core';
+import type { JobResult, JobRun, JobRunStatus, JobRunStore, StartJobRun } from '@smallseedlabs/proba-memory-core';
 
 /** In-process JobRunStore. */
 export class InMemoryJobRunStore implements JobRunStore {
@@ -60,10 +60,15 @@ export class InMemoryJobRunStore implements JobRunStore {
     return structuredClone(r);
   }
 
-  async list(options: { jobName?: string; workspaceId?: string; limit?: number } = {}): Promise<JobRun[]> {
+  async list(options: { jobName?: string; workspaceId?: string; status?: JobRunStatus; limit?: number } = {}): Promise<JobRun[]> {
     return structuredClone(
       this.runs
-        .filter((r) => (!options.jobName || r.jobName === options.jobName) && (!options.workspaceId || r.workspaceId === options.workspaceId))
+        .filter(
+          (r) =>
+            (!options.jobName || r.jobName === options.jobName) &&
+            (!options.workspaceId || r.workspaceId === options.workspaceId) &&
+            (!options.status || r.status === options.status)
+        )
         .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))
         .slice(0, options.limit ?? 50)
     );

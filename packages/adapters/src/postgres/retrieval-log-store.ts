@@ -63,6 +63,17 @@ export class PostgresRetrievalLogStore implements RetrievalLogStore {
     return r.rows.map(toEntry);
   }
 
+  async listByMemoryId(workspaceId: string, memoryId: string, options: { limit?: number } = {}): Promise<RetrievalLogEntry[]> {
+    if (!isUuid(memoryId)) return [];
+    const r = await this.pool.query(
+      `SELECT ${COLUMNS} FROM retrieval_log
+       WHERE workspace_id = $1 AND results @> $2::jsonb
+       ORDER BY created_at DESC, id DESC LIMIT $3`,
+      [workspaceId, JSON.stringify([{ id: memoryId }]), Math.min(options.limit ?? 50, 500)]
+    );
+    return r.rows.map(toEntry);
+  }
+
   async listUnresolved(workspaceId: string, options: { createdBefore: string; limit: number }): Promise<RetrievalLogEntry[]> {
     const r = await this.pool.query(
       `SELECT ${COLUMNS} FROM retrieval_log WHERE workspace_id = $1 AND outcome IS NULL AND created_at <= $2::timestamptz ORDER BY created_at, id LIMIT $3`,

@@ -88,6 +88,38 @@ export function runRetrievalLogStoreContract(name: string, factory: () => Promis
       expect((await store.list(b)).map((e) => e.id)).toEqual([eb.id]);
     });
 
+    it('lists retrievals that returned a memory, newest first, per workspace', async () => {
+      const { store } = await make();
+      const a = uniqueName('wsA');
+      const b = uniqueName('wsB');
+      const memoryId = randomUUID();
+      const otherId = randomUUID();
+      const hitOld = makeLogEntry(a, {
+        createdAt: '2026-10-26T09:00:00.000Z',
+        results: [{ id: memoryId, score: 0.5, position: 1 }],
+      });
+      const hitNew = makeLogEntry(a, {
+        createdAt: '2026-10-26T10:00:00.000Z',
+        results: [
+          { id: otherId, score: 0.9, position: 1 },
+          { id: memoryId, score: 0.4, position: 2 },
+        ],
+      });
+      const miss = makeLogEntry(a, {
+        createdAt: '2026-10-26T11:00:00.000Z',
+        results: [{ id: otherId, score: 0.8, position: 1 }],
+      });
+      const elsewhere = makeLogEntry(b, {
+        createdAt: '2026-10-26T12:00:00.000Z',
+        results: [{ id: memoryId, score: 0.7, position: 1 }],
+      });
+      for (const e of [hitOld, hitNew, miss, elsewhere]) await store.append(e);
+      expect((await store.listByMemoryId(a, memoryId)).map((e) => e.id)).toEqual([hitNew.id, hitOld.id]);
+      expect((await store.listByMemoryId(a, memoryId, { limit: 1 })).map((e) => e.id)).toEqual([hitNew.id]);
+      expect(await store.listByMemoryId(a, randomUUID())).toEqual([]);
+      expect((await store.listByMemoryId(b, memoryId)).map((e) => e.id)).toEqual([elsewhere.id]);
+    });
+
     it('lists unresolved entries oldest first, by cut-off, and per workspace', async () => {
       const { store } = await make();
       const a = uniqueName('wsA');
