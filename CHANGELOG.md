@@ -60,8 +60,8 @@ versions follow [Semantic Versioning](https://semver.org/).
   token counter, job scheduler, outcome linker (interface), source adapters, token verifier, rate limiter.
 - Write path: audit and content sources, redaction, LLM extraction, resolver (merge, supersede, create), embedding,
   idempotent storage, provenance, `memory.ingested` and `memory.consolidated` audit events.
-- Audit events with `content` (protocol 0.3.3) are the primary source of conversation text; the Hub content feed
-  is a secondary source.
+- Audit events with `content` (protocol 0.3.3) are the source of conversation text. There is no Hub content feed;
+  the `HubContentSource` port is development-only (`HUB_CONTENT_SOURCE=dev`).
 - Retrieval: vector + full-text + structured filters, reciprocal rank fusion, configurable weighted score, MMR,
   optional LLM rerank, token-budget packing, retrieval log, `memory.retrieved` audit events, versioned scoring
   profiles with shadow and canary rollout.

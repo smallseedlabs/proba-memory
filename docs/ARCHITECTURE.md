@@ -41,10 +41,8 @@ only creates the ports the app asked for (the API has no LLM unless rerank is on
 flowchart LR
   subgraph Sources
     A[Audit stream<br/>Redis Streams<br/>approval.*, goal.*, command.*,<br/>thread.* with content]
-    H[Hub content feed<br/>secondary, optional]
   end
   A -->|AuditEventSource| O[Observations]
-  H -->|ContentFeedSource| O
   O --> R[Redaction<br/>secrets always, PII optional]
   R --> X[LLM extraction<br/>JSON-only, validated, retried]
   X --> V[Resolver<br/>merge / supersede / create]
@@ -78,38 +76,20 @@ Properties that the tests pin down:
 - **Delivery.** The ingestor acks after the pipeline finishes. A failure leaves the item pending; reclaim
   redelivers; after the maximum deliveries the source dead-letters it (the dead letter never keeps `content`).
 
-### Audit `content` and the Hub content feed
+### Audit `content` (conversation text)
 
 Since protocol v0.3.3 an audit event can carry an optional admin-only `content` (raw text of user messages,
 brain replies, clarifications and explanations, secrets masked, with a content digest). `AuditEventSource` uses it as
-the **primary** source of conversation text: `thread.message_received`, `brain.reply_generated`,
+the **source of conversation text**: `thread.message_received`, `brain.reply_generated`,
 `brain.explanation_generated` and `brain.clarification_requested` events become observations **only when
 `content` is present**; without it they carry nothing to learn from and are ignored. Content of kind `prompt`
 (model input) is never used. `approval.*`, `goal.*`, `command.*`, `control.*` and `brain.decision_made` are
 observations from their structured fields as before.
 
-The `HubContentSource` port stays, as a secondary source (`SOURCES=audit,content`).
-
-#### Hub content feed: open question
-
-Open question for the Hub team: **will the Hub expose a content feed?** It would add what audit events do not
-hold: the wording of goals and approval requests/answers, and history from before `content` existed. Proposed
-interface (read-only, workspace-scoped by the service credential, cursor-paged, ordered by `(occurredAt, id)`):
-
-```
-GET /internal/v1/content?workspaceId=<id>&after=<cursor>&limit=100
-→ 200 { "items": [ ContentItem ], "nextCursor": "<opaque>" | null }
-
-ContentItem {
-  id, kind: "goal" | "approval" | "thread_message", workspaceId, occurredAt (UTC ISO 8601),
-  goalId?, threadId?, userId?, author?: { type: "user"|"brain"|"system", id },
-  text, decision?: "granted"|"rejected"|"expired"|"requested", sourceRef: "hub:goal/<id>"
-}
-```
-
-Until it exists only a development source (`HUB_CONTENT_SOURCE=dev`, refused in production unless
-`ALLOW_DEV_CONTENT_SOURCE=true`) is registered. Adding the real one is one adapter and one
-`registries.hubContentSource.register('hub', ...)` call.
+There is **no Hub content feed**. Conversation text reaches memory only through audit events with
+`AUDIT_CONTENT_ENABLED` on the Hub (and the consumer). The `HubContentSource` port remains only for the
+local development source (`HUB_CONTENT_SOURCE=dev`, refused in production unless `ALLOW_DEV_CONTENT_SOURCE=true`)
+when `SOURCES` includes `content`; it is not a production path and no Hub HTTP feed is planned.
 
 ## Read path (retrieval)
 
@@ -317,7 +297,7 @@ Every external dependency is behind a port. The adapter is named in config; the 
 | JobScheduler | `JOB_SCHEDULER` | **interval**, manual | |
 | OutcomeLinker | `OUTCOME_LINKER` | **noop**, memory | interface only in M1 |
 | SourceAdapter | `SOURCES` (list) | **audit**, content | |
-| HubContentSource | `HUB_CONTENT_SOURCE` | dev | the real Hub feed is an open question |
+| HubContentSource | `HUB_CONTENT_SOURCE` | dev | development-only source; no Hub HTTP feed (audit `content` is the path) |
 | TokenVerifier | `MEMORY_API_TOKEN_VERIFIER` | **firebase**, static | static refused in production |
 | RateLimiter | `MEMORY_API_RATE_LIMITER` | **memory**, redis | `redis` shares limits between replicas; `memory` refused in production |
 | AuditEmitter | `AUDIT_TRANSPORT` | **outbox**, bus | see below |
