@@ -24,6 +24,7 @@ import {
   type VectorIndex,
 } from '@smallseedlabs/proba-memory-core';
 import { createPgPool } from '../postgres/pool.js';
+import { assertProductionGuards } from './production-guards.js';
 import { createDefaultRegistries, type AdapterDeps, type Registries } from './registries.js';
 import { RandomIdGenerator, SystemClock } from './system.js';
 
@@ -37,6 +38,8 @@ export interface RuntimeNeeds {
   retrieval?: boolean;
   /** Job run store, job config store, embedding migration store, scheduler, outcome linker. */
   jobs?: boolean;
+  /** The read API's rate limiter (MEMORY_API_RATE_LIMITER) is created by the app; declaring it lets the production guards check it. */
+  rateLimiter?: boolean;
 }
 
 export interface CreateRuntimeOptions {
@@ -89,10 +92,15 @@ const notCreated = (name: string, need: string) => (): never => {
   throw new Error(`${name} is not available in this process (it was not requested: needs.${need})`);
 };
 
-/** Build every port this app needs from config. */
+/**
+ * Build every port this app needs from config. In production it first refuses, before anything is created, any in-memory adapter
+ * (InMemoryAdaptersNotAllowedError; ALLOW_IN_MEMORY_ADAPTERS=true is refused too) and a Redis URL without a password
+ * (RedisPasswordRequiredError).
+ */
 export async function createRuntime(config: AppConfig, options: CreateRuntimeOptions): Promise<Runtime> {
-  const registries = options.registries ?? createDefaultRegistries();
   const needs = options.needs ?? {};
+  assertProductionGuards(config, { includeRateLimiter: needs.rateLimiter, includeRetrieval: needs.retrieval, includeJobs: needs.jobs });
+  const registries = options.registries ?? createDefaultRegistries();
   const clock = options.clock ?? new SystemClock();
   const ids = options.ids ?? new RandomIdGenerator();
   const { logger } = options;

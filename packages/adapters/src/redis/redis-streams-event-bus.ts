@@ -14,6 +14,7 @@ import {
   type Subscription,
 } from '@smallseedlabs/proba-memory-core';
 import { SystemClock } from '../runtime/system.js';
+import { redisClientOptions } from './connection.js';
 
 type RedisClient = ReturnType<typeof createClient>;
 
@@ -66,7 +67,7 @@ export class RedisStreamsEventBus implements EventBus {
 
   constructor(private readonly options: RedisStreamsOptions) {
     this.clock = options.clock ?? new SystemClock();
-    this.client = createClient({ url: options.url });
+    this.client = createClient(redisClientOptions(options.url));
     this.client.on('error', (err) => this.options.logger?.error('redis client error', { err }));
   }
 

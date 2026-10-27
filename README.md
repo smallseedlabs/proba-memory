@@ -25,11 +25,11 @@ Requirements: Node 20+, Docker.
 
 ```bash
 npm ci
-cp .env.example .env            # optional; the commands below set what they need
-npm run docker:up               # Postgres+pgvector on 127.0.0.1:25432, Redis on 127.0.0.1:26379 (project proba-memory-dev)
+scripts/generate-local-env.sh   # writes .env with random Postgres and Redis passwords (nothing has a default password)
+npm run docker:up               # Postgres+pgvector on 127.0.0.1:25432, Redis (ACL user, password) on 127.0.0.1:26379 (project proba-memory-dev)
 
-export NODE_ENV=development DATABASE_URL=postgresql://proba:proba@localhost:25432/proba_memory \
-       REDIS_URL=redis://localhost:26379 EMBEDDER=hash LLM_PROVIDER=scripted \
+set -a; source .env; set +a     # DATABASE_URL and REDIS_URL, with the generated passwords
+export NODE_ENV=development EMBEDDER=hash LLM_PROVIDER=scripted \
        SOURCES=content HUB_CONTENT_SOURCE=dev LOG_LEVEL=warn
 
 npm run migrate                 # create the schema (idempotent)
@@ -47,6 +47,9 @@ for the full response.
 The local setup uses a deterministic hash embedder and a rule-based extractor so it works offline. Their quality
 is only good enough to exercise the flows: for real similarity and extraction configure `EMBEDDER=openai-compatible`
 and `LLM_PROVIDER=deepseek` (see below).
+
+Compose never starts without passwords (`${NAME:?set NAME}`), binds every published port to `127.0.0.1`, and runs Redis with an
+ACL user instead of anonymous access. For a Redis outside the compose network use `rediss://<user>:<password>@host:6380` (TLS).
 
 ### Run the services
 
@@ -184,12 +187,13 @@ docs                 ARCHITECTURE.md, EVALUATION.md, openapi.yaml
 ```bash
 npm run lint && npm run typecheck && npm run build
 npm test                          # unit tests (in-process adapters)
-npm run test:integration          # needs the Postgres and Redis from `npm run docker:up`
+npm run test:integration          # needs the Postgres and Redis from `npm run docker:up` and the .env URLs (see Quickstart)
 npm run build && npm run eval:gate   # retrieval regression gate on the bundled golden set (no services needed)
 ```
 
-CI runs lint, type-check and build, the unit tests, the retrieval regression gate, the integration tests on
-pgvector Postgres and Redis service containers, and builds the four Docker images (`migrate`, `memory-api`, `memory-ingestor`, `memory-jobs`).
+CI runs lint, type-check and build, the unit tests, the compose security check (`node scripts/check-compose-security.mjs`:
+fails when a published port is not on `127.0.0.1` or a password has a default), the retrieval regression gate, the integration tests on
+the compose pgvector Postgres and authenticated Redis, and builds the four Docker images (`migrate`, `memory-api`, `memory-ingestor`, `memory-jobs`).
 Docker host ports are deliberately uncommon (`POSTGRES_HOST_PORT`, `REDIS_HOST_PORT` and the `MEMORY_*_HOST_PORT`
 variables override them).
 
@@ -200,3 +204,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md). License
 Planned and prepared by extension points only: the portal screens (M4, including the screens on top of the
 evaluation harness). The evaluation harness itself (M3 part A) and the M2 lifecycle jobs are built. The outcome
 linker is an interface with a no-op default.
+
+## Production safety
+
+With `NODE_ENV=production` the services refuse to start (before creating any adapter) when an in-memory adapter is selected
+(`InMemoryAdaptersNotAllowedError`; there is no opt-in, `ALLOW_IN_MEMORY_ADAPTERS=true` is refused too) or when `REDIS_URL`
+has no password (`RedisPasswordRequiredError`). Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#production-guards).

@@ -5,6 +5,24 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **Production guard for in-memory adapters:** with `NODE_ENV=production`, selecting any in-memory adapter (`MEMORY_STORE`,
+  `VECTOR_INDEX`, `OUTBOX_STORE`, `EVENT_BUS`, `SCORING_PROFILE_STORE`, `RETRIEVAL_LOG_STORE`, `JOB_RUN_STORE`, `JOB_CONFIG_STORE`,
+  `EMBEDDING_MIGRATION_STORE`, `OUTCOME_LINKER`, `MEMORY_API_RATE_LIMITER`) makes memory-api, memory-ingestor and memory-jobs exit with
+  `InMemoryAdaptersNotAllowedError` before anything is created. There is no opt-in: the new `ALLOW_IN_MEMORY_ADAPTERS=true` is itself
+  refused in production and has no effect elsewhere. **Upgrade note:** production deployments must select durable adapters (the compose
+  `apps` profile already does).
+- **Redis authentication and TLS:** in production a `REDIS_URL` without a password makes the service refuse to start
+  (`RedisPasswordRequiredError`). `rediss://` (TLS, certificate and host name verified) is supported by the event bus and the rate limiter;
+  other schemes are refused. **Upgrade note:** use `redis://<user>:<password>@host:6379`.
+- **Compose hardening:** Redis runs with an ACL user and no anonymous access; every published port is bound to `127.0.0.1`
+  (memory-api, memory-ingestor and memory-jobs included); `POSTGRES_PASSWORD` and `REDIS_PASSWORD` have no default
+  (`${NAME:?set NAME}`). **Upgrade note:** run `scripts/generate-local-env.sh` (or set both) before `docker compose up`, and recreate the
+  volumes (`docker compose down -v`) because the Postgres and Redis credentials change.
+- CI step `Check docker-compose.yml` (`scripts/check-compose-security.mjs`) fails when a published port is not on `127.0.0.1` or a
+  password has a default; the integration job now runs against the compose Postgres and (authenticated) Redis.
+
 ### Added
 
 - Memory lifecycle jobs (milestone 2): `consolidate`, `promote`, `collapse`, `contradictions`, `reembed`,

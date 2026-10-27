@@ -3,6 +3,13 @@
 #   docker compose --profile apps up -d --build  # migrate, then memory-api, memory-ingestor, memory-jobs
 # The host ports are deliberately uncommon so they do not clash with other stacks; override with
 # POSTGRES_HOST_PORT / REDIS_HOST_PORT. See README.md for the local (no external provider) setup.
+#
+# SECURITY (checked in CI by scripts/check-compose-security.mjs):
+#   * Every published port is bound to 127.0.0.1: nothing here is reachable from another machine. To expose a service, put a
+#     reverse proxy with TLS in front of it; do not widen the bind.
+#   * No password has a default. Each is `${NAME:?set NAME}`: compose refuses to start without it. Generate a local .env with
+#     `scripts/generate-local-env.sh` (random passwords, never committed), or set them in your secret manager for a real deployment.
+#     Use URL-safe passwords (hex): POSTGRES_PASSWORD and REDIS_PASSWORD are placed inside URLs.
 name: proba-memory-dev
 
 services:
@@ -11,7 +18,7 @@ services:
     container_name: proba-memory-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-proba}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-proba}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-proba_memory}
     ports:
       - "127.0.0.1:${POSTGRES_HOST_PORT:-25432}:5432"
@@ -26,14 +33,26 @@ services:
   redis:
     image: redis:7-alpine
     container_name: proba-memory-redis
+    environment:
+      REDIS_USER: ${REDIS_USER:-proba}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+    # An ACL user with a password; the `default` user (no password) is switched off. The ACL file is written at start from the
+    # environment so the password never appears in the process arguments. The user may do everything except the @dangerous
+    # commands (FLUSHALL, FLUSHDB, KEYS, CONFIG, DEBUG, SHUTDOWN, ...), which the memory services never need.
     # AOF persistence ON: the audit stream the ingestor reads must survive a Redis restart.
-    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    command:
+      - sh
+      - -c
+      - >-
+        umask 077 &&
+        printf 'user default off\nuser %s on >%s ~* &* +@all -@dangerous\n' "$$REDIS_USER" "$$REDIS_PASSWORD" > /tmp/users.acl &&
+        exec redis-server --aclfile /tmp/users.acl --appendonly yes --appendfsync everysec
     ports:
       - "127.0.0.1:${REDIS_HOST_PORT:-26379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli --user "$$REDIS_USER" ping | grep -q PONG']
       interval: 5s
       timeout: 3s
       retries: 10
@@ -50,8 +69,9 @@ services:
     environment: &app-env
       NODE_ENV: ${NODE_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-proba}:${POSTGRES_PASSWORD:-proba}@postgres:5432/${POSTGRES_DB:-proba_memory}
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${POSTGRES_USER:-proba}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-proba_memory}
+      # An ACL user and password, never anonymous. Use rediss:// (TLS) for a Redis outside this compose network.
+      REDIS_URL: redis://${REDIS_USER:-proba}:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379
       EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1024}
       EMBEDDER: ${EMBEDDER:-openai-compatible}
       EMBEDDER_BASE_URL: ${EMBEDDER_BASE_URL:-}
@@ -96,7 +116,7 @@ services:
       MEMORY_API_RATE_LIMITER: ${MEMORY_API_RATE_LIMITER:-redis}
       MEMORY_API_TRUST_PROXY: ${MEMORY_API_TRUST_PROXY:-false}
     ports:
-      - "${MEMORY_API_HOST_PORT:-3200}:3200"
+      - "127.0.0.1:${MEMORY_API_HOST_PORT:-3200}:3200"
     restart: unless-stopped
 
   memory-ingestor:
@@ -110,7 +130,7 @@ services:
       <<: *app-env
       PORT: 3201
     ports:
-      - "${MEMORY_INGESTOR_HOST_PORT:-3201}:3201"
+      - "127.0.0.1:${MEMORY_INGESTOR_HOST_PORT:-3201}:3201"
     restart: unless-stopped
 
   memory-jobs:
@@ -125,7 +145,7 @@ services:
       PORT: 3202
       JOBS_ENABLED: ${JOBS_ENABLED:-decay}
     ports:
-      - "${MEMORY_JOBS_HOST_PORT:-3202}:3202"
+      - "127.0.0.1:${MEMORY_JOBS_HOST_PORT:-3202}:3202"
     restart: unless-stopped
 
 volumes:
