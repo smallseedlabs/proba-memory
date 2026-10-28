@@ -34,10 +34,16 @@ import {
   ManualClock,
   SequentialIdGenerator,
   StaticTokenVerifier,
+  createContextBridgeAuth,
+  createContextBridgeSigners,
+  type AssertionOptions,
+  type ContextBridgeSigners,
+  type ServiceTokenOptions,
 } from '@smallseedlabs/proba-memory-adapters';
+import { randomUUID } from 'node:crypto';
 import type { OutgoingHttpHeaders } from 'node:http';
 import type { FastifyInstance } from 'fastify';
-import type { JobRunStore, RetrievalLogStore } from '@smallseedlabs/proba-memory-core';
+import type { JobRunStore, RetrievalLogStore, ScoringProfileStore } from '@smallseedlabs/proba-memory-core';
 import { buildServer, type ReadinessCheck } from './server.js';
 
 export const TOPIC = 'proba.audit.events';
@@ -83,6 +89,8 @@ export function testConfig(overrides: Record<string, string> = {}): AppConfig {
 
 export interface HarnessOptions {
   env?: Record<string, string>;
+  /** Turn the `context-reader` role on, with its two key files written to a temporary directory. */
+  contextReader?: boolean;
   limiter?: RateLimiter;
   readiness?: ReadinessCheck[];
   /** Replace the store and index (to run the same server on Postgres). */
@@ -103,18 +111,48 @@ export interface Harness {
   clock: ManualClock;
   logStore: RetrievalLogStore;
   jobRuns: JobRunStore;
+  profiles: ScoringProfileStore;
   /** Insert memories (with vectors from the embedder) into a workspace and index them. */
   seed(workspaceId: string, items: Partial<MemoryInsert>[]): Promise<Memory[]>;
   get(path: string, token?: string | null, headers?: Record<string, string>): Promise<{ status: number; body: any; headers: OutgoingHttpHeaders }>;
   post(path: string, body: unknown, token?: string | null, headers?: Record<string, string>): Promise<{ status: number; body: any; headers: OutgoingHttpHeaders }>;
+  /** The signers of the bridge's service token and the Hub's assertion (present when `contextReader` is on). */
+  signers: ContextBridgeSigners;
+  /**
+   * A call as the `context-reader` role: a valid service token and a valid assertion for `actorId` in `workspaceId` unless
+   * overridden. A GET carries `actorId` and `workspaceId` in the query; a call with a `body` is a POST (the search) and carries
+   * them in the body. `scope: false` sends none, and `scope` values override or (with `null`) drop one of them.
+   */
+  asContextReader(
+    path: string,
+    options?: {
+      actorId?: string;
+      workspaceId?: string;
+      assertion?: AssertionOptions | string | null;
+      service?: ServiceTokenOptions | string | null;
+      /** The request body of a search; its presence makes the call a POST. */
+      body?: Record<string, unknown>;
+      /** The actorId / workspaceId sent: default the acting user's. `false` sends none. */
+      scope?: { actorId?: string | null; workspaceId?: string | null } | false;
+    }
+  ): Promise<{ status: number; body: any; headers: OutgoingHttpHeaders }>;
   /** Everything the API published on the audit topic since the last call. */
   emitted(): Promise<AuditEvent[]>;
   close(): Promise<void>;
 }
 
 export async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
-  const config = testConfig(options.env);
   const clock = new ManualClock(NOW);
+  const signers = await createContextBridgeSigners(() => clock.now());
+  const keyEnv: Record<string, string> = options.contextReader
+    ? {
+        MEMORY_API_CONTEXT_READER_ENABLED: 'true',
+        CONTEXT_SERVICE_PUBLIC_KEY_FILE: await signers.service.writeJwks(),
+        HUB_ASSERTION_PUBLIC_KEY_FILE: await signers.hub.writeJwks(),
+      }
+    : {};
+  const config = testConfig({ ...keyEnv, ...options.env });
+  const contextBridge = await createContextBridgeAuth(config, { now: () => clock.now() });
   const ids = new SequentialIdGenerator();
   const logger = new MemoryLogger();
   const memoryStore = options.store ?? new InMemoryMemoryStore();
@@ -148,6 +186,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     logger,
     clock,
     verifier: new StaticTokenVerifier({ tokens: config.api.staticTokens, nodeEnv: config.env }),
+    ...(contextBridge ? { contextBridge } : {}),
     limiter,
     store: memoryStore,
     profiles,
@@ -170,6 +209,16 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   };
   const authHeader = (token: string | null | undefined): Record<string, string> => (token ? { authorization: `Bearer ${token}` } : {});
 
+  const send = async (method: 'GET' | 'POST', url: string, headers: Record<string, string>, payload?: unknown) => {
+    const res = await app.inject({
+      method,
+      url,
+      headers: { ...(method === 'POST' ? { 'content-type': 'application/json' } : {}), ...headers },
+      ...(payload !== undefined ? { payload: typeof payload === 'string' ? payload : JSON.stringify(payload) } : {}),
+    });
+    return { status: res.statusCode, body: parse(res), headers: res.headers };
+  };
+
   let reader: Subscription | undefined;
   return {
     app,
@@ -182,6 +231,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     clock,
     logStore,
     jobRuns,
+    profiles,
+    signers,
     async seed(workspaceId, items) {
       const out: Memory[] = [];
       for (const item of items) {
@@ -215,6 +266,24 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
         payload: typeof body === 'string' ? body : JSON.stringify(body),
       });
       return { status: res.statusCode, body: parse(res), headers: res.headers };
+    },
+    async asContextReader(path, o = {}) {
+      const actorId = o.actorId ?? randomUUID();
+      const workspaceId = o.workspaceId ?? WORKSPACE;
+      const token = typeof o.service === 'string' ? o.service : o.service === null ? null : await signers.mintServiceToken(o.service);
+      const assertion =
+        typeof o.assertion === 'string' ? o.assertion : o.assertion === null ? null : await signers.mintAssertion({ sub: actorId, workspaceId, ...o.assertion });
+      const scope: Record<string, string> = {};
+      if (o.scope !== false) {
+        const actor = o.scope?.actorId === undefined ? actorId : o.scope.actorId;
+        const workspace = o.scope?.workspaceId === undefined ? workspaceId : o.scope.workspaceId;
+        if (actor !== null) scope.actorId = actor;
+        if (workspace !== null) scope.workspaceId = workspace;
+      }
+      const headers = { ...authHeader(token), ...(assertion ? { 'x-act-as': assertion } : {}) };
+      if (o.body !== undefined) return send('POST', path, headers, { ...o.body, ...scope });
+      const params = new URLSearchParams(scope).toString();
+      return send('GET', params ? `${path}${path.includes('?') ? '&' : '?'}${params}` : path, headers);
     },
     async emitted() {
       reader ??= await bus.subscribe({ topic: TOPIC, group: 'test-reader', consumer: 'c1' });

@@ -326,6 +326,97 @@ export function runMemoryStoreContract(name: string, factory: () => Promise<Memo
       expect(await store.listWorkspaceIds()).toContain(ws);
     });
 
+    describe('ownership and reader scope', () => {
+      const text = 'discount banner countdown timer for the autumn launch';
+
+      async function seedOwners(store: MemoryStore, ws: string) {
+        const mine = makeMemoryInsert(ws, { content: `${text} (mine)`, ownerActorId: 'user-a', visibility: 'owner', createdAt: '2026-10-20T10:00:00.000Z' });
+        const shared = makeMemoryInsert(ws, { content: `${text} (shared)`, ownerActorId: null, visibility: 'workspace', createdAt: '2026-10-21T10:00:00.000Z' });
+        const sharedByOther = makeMemoryInsert(ws, { content: `${text} (shared by other)`, ownerActorId: 'user-b', visibility: 'workspace', createdAt: '2026-10-22T10:00:00.000Z' });
+        const theirs = makeMemoryInsert(ws, { content: `${text} (theirs)`, ownerActorId: 'user-b', visibility: 'owner', createdAt: '2026-10-23T10:00:00.000Z' });
+        const orphan = makeMemoryInsert(ws, { content: `${text} (orphan)`, ownerActorId: null, visibility: 'owner', createdAt: '2026-10-24T10:00:00.000Z' });
+        await store.transaction(async (tx) => {
+          for (const m of [mine, shared, sharedByOther, theirs, orphan]) await tx.insertMemory(m);
+        });
+        return { mine, shared, sharedByOther, theirs, orphan };
+      }
+
+      it('stores the owner and the visibility, and defaults to no owner and visibility owner', async () => {
+        const { store } = await make();
+        const ws = uniqueName('ws');
+        const owned = makeMemoryInsert(ws, { ownerActorId: 'user-a', visibility: 'workspace' });
+        const plain = makeMemoryInsert(ws);
+        await store.transaction(async (tx) => {
+          await tx.insertMemory(owned);
+          await tx.insertMemory(plain);
+        });
+        expect(await store.getMemory(ws, owned.id)).toMatchObject({ ownerActorId: 'user-a', visibility: 'workspace' });
+        expect(await store.getMemory(ws, plain.id)).toMatchObject({ ownerActorId: null, visibility: 'owner' });
+      });
+
+      it('list, full-text search, get and get-many return only what the user may read', async () => {
+        const { store } = await make();
+        const ws = uniqueName('ws');
+        const { mine, shared, sharedByOther, theirs, orphan } = await seedOwners(store, ws);
+        const readable = [mine.id, shared.id, sharedByOther.id].sort();
+
+        const listed = await store.listMemories({ workspaceId: ws, filter: { visibleTo: 'user-a' }, limit: 50 });
+        expect(listed.memories.map((m) => m.id).sort()).toEqual(readable);
+        const found = await store.searchText({ workspaceId: ws, query: 'discount banner', limit: 50, filter: { visibleTo: 'user-a' } });
+        expect(found.map((h) => h.id).sort()).toEqual(readable);
+        expect((await store.getMemories(ws, [mine.id, shared.id, sharedByOther.id, theirs.id, orphan.id], 'user-a')).map((m) => m.id).sort()).toEqual(readable);
+        expect(await store.getMemory(ws, mine.id, 'user-a')).not.toBeNull();
+        expect(await store.getMemory(ws, shared.id, 'user-a')).not.toBeNull();
+        for (const hidden of [theirs, orphan]) expect(await store.getMemory(ws, hidden.id, 'user-a')).toBeNull();
+        // Without a user the reads stay workspace-wide (administrators and viewers).
+        expect(await store.getMemory(ws, theirs.id)).not.toBeNull();
+        expect((await store.listMemories({ workspaceId: ws, limit: 50 })).memories).toHaveLength(5);
+        expect(await store.countMemories(ws, { visibleTo: 'user-a' })).toBe(3);
+        // An empty user id reads nothing of anybody's, only what is shared.
+        expect((await store.listMemories({ workspaceId: ws, filter: { visibleTo: '' }, limit: 50 })).memories.map((m) => m.id).sort()).toEqual([shared.id, sharedByOther.id].sort());
+      });
+
+      it('the scope is applied by the query: a better match of another user never uses up the limit', async () => {
+        const { store } = await make();
+        const ws = uniqueName('ws');
+        const strong = makeMemoryInsert(ws, { content: 'discount banner countdown timer discount banner countdown timer', ownerActorId: 'user-b', visibility: 'owner' });
+        const weak = makeMemoryInsert(ws, { content: 'a banner somewhere', ownerActorId: 'user-a', visibility: 'owner' });
+        await store.transaction(async (tx) => {
+          await tx.insertMemory(strong);
+          await tx.insertMemory(weak);
+        });
+        const hits = await store.searchText({ workspaceId: ws, query: 'discount banner countdown timer', limit: 1, filter: { visibleTo: 'user-a' } });
+        expect(hits.map((h) => h.id)).toEqual([weak.id]);
+        const page = await store.listMemories({ workspaceId: ws, filter: { visibleTo: 'user-a' }, limit: 1 });
+        expect(page.memories.map((m) => m.id)).toEqual([weak.id]);
+        expect(page.nextCursor).toBeNull();
+      });
+
+      it('ownedBy matches the exact owner, and null the memories that have none', async () => {
+        const { store } = await make();
+        const ws = uniqueName('ws');
+        const { mine, shared, orphan } = await seedOwners(store, ws);
+        const ids = async (ownedBy: string | null) => (await store.listMemories({ workspaceId: ws, filter: { ownedBy }, limit: 50 })).memories.map((m) => m.id).sort();
+        expect(await ids('user-a')).toEqual([mine.id]);
+        expect(await ids(null)).toEqual([shared.id, orphan.id].sort());
+      });
+
+      it('tags match memories learned from at least one of the signals', async () => {
+        const { store } = await make();
+        const ws = uniqueName('ws');
+        const rejected = makeMemoryInsert(ws, { provenance: { extractor: null, observationIds: [], stance: 'negative', signals: ['approval.rejected'], createdBy: 'test' } });
+        const granted = makeMemoryInsert(ws, { provenance: { extractor: null, observationIds: [], stance: 'positive', signals: ['approval.granted', 'goal.created'], createdBy: 'test' } });
+        const plain = makeMemoryInsert(ws);
+        await store.transaction(async (tx) => {
+          for (const m of [rejected, granted, plain]) await tx.insertMemory(m);
+        });
+        const ids = async (tags: string[]) => (await store.listMemories({ workspaceId: ws, filter: { tags }, limit: 50 })).memories.map((m) => m.id).sort();
+        expect(await ids(['approval.rejected'])).toEqual([rejected.id]);
+        expect(await ids(['goal.created', 'approval.rejected'])).toEqual([rejected.id, granted.id].sort());
+        expect(await ids(['unknown.signal'])).toEqual([]);
+      });
+    });
+
     it('answers ping', async () => {
       const { store } = await make();
       await expect(store.ping()).resolves.toBeUndefined();
