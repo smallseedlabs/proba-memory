@@ -25,6 +25,16 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`context-reader` service role and per-user memory ownership (Brief 04).** `memory-api` accepts the context bridge's EdDSA service token (`iss` `proba-context`, `aud` `proba-memory`, `sub` `context-reader`, `jti`, at most 2 minutes) together
+  with the Hub's `X-Act-As` assertion (`ActAsAssertionClaims`, `iss` `proba-hub`, 30 seconds of clock skew) and `actorId` / `workspaceId` that must equal the assertion (in the body of the search, in the query of the other reads; missing: `400`,
+  different: `403`, both audited). The role reaches only `POST /v1/memories/search`, `GET /v1/memories/{id}` and `GET /v1/profiles`; everything else answers `403`. Reads are limited to the memories the acting user owns plus those with
+  `visibility = 'workspace'`: the scope (`visibleTo`) is applied inside the vector, full-text and structured candidate queries and in hydration, and another user's memory by id is `404`, never `403`. The search gains `minScore`, `filter.kinds`
+  and `filter.tags`. Each read is audited as `memory.retrieved` with actor `service:context-reader`, the user and the assertion's `jti`, never memory text. **Migration `0008`** adds `memories.owner_actor_id` and `memories.visibility`
+  (default `owner`), backfills the owner from the observations a memory was created from (only when all of them name the same user) and adds an index; a rollback script is in `migrations/postgres/rollback/`. Enabled by
+  `MEMORY_API_CONTEXT_READER_ENABLED`, `CONTEXT_SERVICE_PUBLIC_KEY_FILE` and `HUB_ASSERTION_PUBLIC_KEY_FILE` (JWKS of public keys; `scripts/generate-service-keypair.mjs` creates a pair). The role cannot be enabled without both files;
+  with `NODE_ENV=production` the paths must be absolute, the files different and not group/world-writable, and the static token verifier is refused. OpenAPI 1.1.0 documents the role; request/response examples are in
+  `docs/contracts/context-reader/`; setup is in `docs/CONTEXT_READER.md`.
+
 - Memory lifecycle jobs (milestone 2): `consolidate`, `promote`, `collapse`, `contradictions`, `reembed`,
   `usage-feedback` and `cleanup`, on the existing job framework. Each is idempotent, leased, audited with
   `memory.*` events (new: `memory.promoted`, `memory.collapsed`, `memory.confidence_adjusted`,

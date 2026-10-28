@@ -359,7 +359,7 @@ Types come from `@smallseedlabs/proba-protocol` pinned to v0.3.3.
 
 | Table | Purpose |
 | --- | --- |
-| `memories` | one row per memory: workspace, category, content, summary, `embedding vector(N)` (HNSW cosine) with model and version, plus `embedding_next*` (the staged vector of a re-embed), generated `content_tsv` (GIN), importance, confidence, usefulness, status (`active`/`superseded`/`tombstoned`), `supersedes_id`, validity window, access and reinforcement counters, evidence count, goal/thread, source refs, provenance |
+| `memories` | one row per memory: workspace, owner (`owner_actor_id`) and `visibility` (`owner` or `workspace`), category, content, summary, `embedding vector(N)` (HNSW cosine) with model and version, plus `embedding_next*` (the staged vector of a re-embed), generated `content_tsv` (GIN), importance, confidence, usefulness, status (`active`/`superseded`/`tombstoned`), `supersedes_id`, validity window, access and reinforcement counters, evidence count, goal/thread, source refs, provenance |
 | `observations` | the idempotency ledger of the write path: id, source, redacted text, facts, signal, status, attempts |
 | `memory_sources` | which observations created or reinforced which memory |
 | `memory_links` | `supports`, `contradicts`, `supersedes` between memories, with weight |
@@ -380,6 +380,11 @@ hard-deleted: retiring is a status change.
 - Sign-in uses Firebase ID tokens; access needs an allow-listed address or domain (viewer), admins see candidate
   tables, non-active memories and full profiles. Per-caller rate limits, an auth-failure limiter and throttled
   denial audit events.
+- The `context-reader` service role (the context bridge) reads for one user at a time with two EdDSA credentials: its service token (`Authorization`) and the Hub's act-as assertion (`X-Act-As`), with
+  `actorId` and `workspaceId` that must equal the assertion (search body, or query of the other reads). It is checked against an allow-list of three routes before any other rule (`CONTEXT_READER_ROUTES`), and
+  reads only the memories the user owns plus those with `visibility = 'workspace'`: the scope (`visibleTo`) is part of the filter every candidate generator receives (vector, full text, structured) and of
+  hydration, so it is applied in SQL and never after the fact. Another user's memory by id is `404`. Verification sits behind the `ContextServiceVerifier` and `ActAsVerifier` ports with keys read from files
+  at start-up. Setup and exact behaviour: [`CONTEXT_READER.md`](CONTEXT_READER.md).
 - No write routes exist on the API.
 - Logs are structured JSON with `traceId` on every line; secrets and memory or conversation text are not logged.
 
