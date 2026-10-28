@@ -161,10 +161,9 @@ export async function createContextBridgeAuth(config: AppConfig, options: { now?
   if (config.isProduction && config.adapters.tokenVerifier === 'static') {
     throw new Error('MEMORY_API_TOKEN_VERIFIER=static is not available when NODE_ENV=production');
   }
-  const [service, assertions] = await Promise.all([
-    loadPublicKeySet(contextReader.serviceKeyFile, { envName: 'CONTEXT_SERVICE_PUBLIC_KEY_FILE', nodeEnv: config.env }),
-    loadPublicKeySet(contextReader.assertionKeyFile, { envName: 'HUB_ASSERTION_PUBLIC_KEY_FILE', nodeEnv: config.env }),
-  ]);
+  // One after the other, so a problem is always reported for the same file first.
+  const service = await loadPublicKeySet(contextReader.serviceKeyFile, { envName: 'CONTEXT_SERVICE_PUBLIC_KEY_FILE', nodeEnv: config.env });
+  const assertions = await loadPublicKeySet(contextReader.assertionKeyFile, { envName: 'HUB_ASSERTION_PUBLIC_KEY_FILE', nodeEnv: config.env });
   if (config.isProduction && service.publicKeys.some((x) => assertions.publicKeys.includes(x))) {
     throw new Error('CONTEXT_SERVICE_PUBLIC_KEY_FILE and HUB_ASSERTION_PUBLIC_KEY_FILE list the same key: the bridge and the Hub never share a key');
   }
