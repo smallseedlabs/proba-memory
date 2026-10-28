@@ -68,6 +68,13 @@ export interface RetrievalContext {
   actor: AuditActor;
   traceId: string;
   userId?: string;
+  /**
+   * Reader scope: the user the read acts for. Every candidate generator then returns only that user's memories and those shared with
+   * the workspace, and hydration and ranking see nothing else. Set from the verified assertion, never from the request.
+   */
+  visibleTo?: string;
+  /** Added to the `details` of the memory.retrieved event of every read made with this context (ids and names only, never text). */
+  auditDetails?: Record<string, unknown>;
   /** Include the full candidate table in the response (admins). It is always logged. */
   includeCandidates?: boolean;
 }
@@ -116,7 +123,10 @@ export class RetrievalService {
     const selection = selectProfiles(versions, ctx.traceId);
     const profile = selection.served;
     const config = profile.config;
-    const filter: MemoryFilter = request.filter ?? {};
+    if (ctx.visibleTo !== undefined && ctx.visibleTo.trim() === '') throw new RetrievalInputError('the reader scope names no user');
+    if (request.minScore !== undefined && !(request.minScore >= 0 && request.minScore <= 1)) throw new RetrievalInputError('minScore must be between 0 and 1');
+    // The scope goes into the filter every candidate generator receives: it cannot be left out of one of them.
+    const filter: MemoryFilter = { ...(request.filter ?? {}), ...(ctx.visibleTo !== undefined ? { visibleTo: ctx.visibleTo } : {}) };
     const degraded: string[] = [];
 
     // Candidate generation: vector and full text in parallel; either may fail without losing the other.
@@ -132,7 +142,7 @@ export class RetrievalService {
     ]);
 
     const ids = [...new Set([...vectorHits.map((h) => h.id), ...textHits.map((h) => h.id)])];
-    const hydrated = await deps.store.getMemories(ctx.workspaceId, ids);
+    const hydrated = await deps.store.getMemories(ctx.workspaceId, ids, ctx.visibleTo);
     const memories = new Map<string, Memory>();
     for (const m of hydrated) {
       if (m.workspaceId !== ctx.workspaceId) {
@@ -143,7 +153,7 @@ export class RetrievalService {
       if (matchesFilter(m, filter)) memories.set(m.id, m);
     }
 
-    const rankArgs = { vectorHits, textHits, memories, now, query, workspaceId: ctx.workspaceId, limit };
+    const rankArgs = { vectorHits, textHits, memories, now, query, workspaceId: ctx.workspaceId, limit, minScore: request.minScore ?? 0 };
     const ranked = await this.rank(config, rankArgs);
     let selected = ranked.selected;
 
@@ -269,6 +279,7 @@ export class RetrievalService {
           target: { type: 'retrieval', id: retrievalId },
           durationMs: stats.durationMs,
           details: {
+            ...ctx.auditDetails,
             operation: 'search',
             count: results.length,
             ids: results.slice(0, MAX_AUDIT_IDS).map((r) => r.id),
@@ -320,7 +331,7 @@ export class RetrievalService {
       action: 'memory.retrieved',
       category: 'memory',
       outcome: 'success',
-      details: { operation, count: ids.length, ids: ids.slice(0, MAX_AUDIT_IDS), ...details },
+      details: { ...ctx.auditDetails, operation, count: ids.length, ids: ids.slice(0, MAX_AUDIT_IDS), ...details },
     });
   }
 
@@ -362,6 +373,8 @@ export class RetrievalService {
       query: string;
       workspaceId: string;
       limit: number;
+      /** Raises the profile's own score floor for this call (0 leaves it as it is). */
+      minScore: number;
     }
   ): Promise<Ranked> {
     const { memories } = args;
@@ -403,7 +416,7 @@ export class RetrievalService {
 
     const eligible: CandidateTrace[] = [];
     for (const t of traces) {
-      if (t.score < config.minScore) t.droppedReason = 'below_min_score';
+      if (t.score < Math.max(config.minScore, args.minScore)) t.droppedReason = 'below_min_score';
       else if (eligible.length >= config.candidates.poolSize) t.droppedReason = 'outside_pool';
       else eligible.push(t);
     }

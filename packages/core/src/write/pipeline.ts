@@ -10,6 +10,7 @@ import { clamp01, deterministicUuid, isUuid } from '../util/index.js';
 import type { MemoryExtractor } from './extractor.js';
 import { consolidatedDraft, ingestedDraft } from './memory-audit.js';
 import type { Redaction, Redactor } from './redaction.js';
+import { ownerOfObservation } from './ownership.js';
 import { MemoryResolver, type Resolution } from './resolver.js';
 
 export interface PipelineDeps {
@@ -131,7 +132,8 @@ export class WritePipeline {
         extraction.candidates.map((c) => c.content),
         { purpose: 'document' }
       );
-      const resolutions = await resolver.resolve(observation.workspaceId, extraction.candidates, vectors);
+      const ownerActorId = ownerOfObservation(observation);
+      const resolutions = await resolver.resolve(observation.workspaceId, extraction.candidates, vectors, ownerActorId);
 
       // 7. Commit everything atomically.
       const now = clock.isoNow();
@@ -232,6 +234,9 @@ export class WritePipeline {
             evidenceCount: 1,
             goalId: isUuid(observation.goalId) ? observation.goalId : null,
             threadId: isUuid(observation.threadId) ? observation.threadId : null,
+            // What a user said or decided belongs to that user: it is shared with the workspace only by an explicit change.
+            ownerActorId,
+            visibility: 'owner',
             sourceRefs: [ref],
             provenance: provenanceBase(r.candidate.stance),
           };

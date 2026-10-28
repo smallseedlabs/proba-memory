@@ -10,6 +10,8 @@ export interface SearchRequest {
   tokenBudget?: number;
   /** Ask for the LLM rerank step (only when the profile enables it). */
   rerank?: boolean;
+  /** Drop candidates whose final score is below this (0..1). The scoring profile's own floor still applies. */
+  minScore?: number;
 }
 
 export interface CandidateTrace {

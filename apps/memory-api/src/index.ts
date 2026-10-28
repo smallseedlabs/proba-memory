@@ -4,7 +4,7 @@ import {
   loadConfigFromEnvironment,
   redactConfig,
 } from '@smallseedlabs/proba-memory-core';
-import { createRetrievalService, createRuntime } from '@smallseedlabs/proba-memory-adapters';
+import { createContextBridgeAuth, createRetrievalService, createRuntime } from '@smallseedlabs/proba-memory-adapters';
 import { buildServer } from './server.js';
 
 /**
@@ -35,7 +35,14 @@ async function main(): Promise<void> {
   });
   const verifier = await runtime.registries.tokenVerifier.create(config.adapters.tokenVerifier, runtime.deps);
   const limiter = await runtime.registries.rateLimiter.create(config.adapters.rateLimiter, runtime.deps);
-  logger.info('api adapters created', { lifecycle: 'adapters_created', tokenVerifier: verifier.name, rateLimiter: config.adapters.rateLimiter });
+  // The `context-reader` role: both key files are read now, so a missing or unusable file stops the start instead of leaving the role half configured.
+  const contextBridge = (await createContextBridgeAuth(config)) ?? undefined;
+  logger.info('api adapters created', {
+    lifecycle: 'adapters_created',
+    tokenVerifier: verifier.name,
+    rateLimiter: config.adapters.rateLimiter,
+    contextReader: contextBridge !== undefined,
+  });
 
   await runtime.store.ping();
   try {
@@ -52,6 +59,7 @@ async function main(): Promise<void> {
     logger,
     clock: runtime.clock,
     verifier,
+    ...(contextBridge ? { contextBridge } : {}),
     limiter,
     store: runtime.store,
     profiles: runtime.profiles,

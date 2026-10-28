@@ -16,6 +16,15 @@ export type MemoryStatus = (typeof MEMORY_STATUSES)[number];
 
 export type Stance = 'positive' | 'negative' | 'neutral';
 
+export const MEMORY_VISIBILITIES = ['owner', 'workspace'] as const;
+/**
+ * Who may read a memory through a user-scoped read (the `context-reader` role).
+ * owner: only the user in `ownerActorId`; a memory with no owner is then read by nobody on that path.
+ * workspace: every user of the workspace.
+ * Administrator and viewer reads are workspace-wide and ignore this field.
+ */
+export type MemoryVisibility = (typeof MEMORY_VISIBILITIES)[number];
+
 /** Where a memory's evidence came from. `ref` is the namespaced source reference, for example `audit:<eventId>` or `dev:goal-3`. */
 export interface SourceRef {
   kind: 'audit' | 'goal' | 'approval' | 'thread' | 'analytics' | 'other';
@@ -73,14 +82,22 @@ export interface Memory {
   evidenceCount: number;
   goalId: string | null;
   threadId: string | null;
+  /** The user the memory was learned from (the actor of the audit event); null when no user is behind it. */
+  ownerActorId: string | null;
+  visibility: MemoryVisibility;
   sourceRefs: SourceRef[];
   provenance: MemoryProvenance;
   createdAt: string;
   updatedAt: string;
 }
 
-/** A memory as written to a store: the same fields plus the vector, when one exists. */
-export interface MemoryInsert extends Omit<Memory, 'createdAt' | 'updatedAt'> {
+/**
+ * A memory as written to a store: the same fields plus the vector, when one exists. Ownership defaults to the
+ * narrowest reading (no owner, visibility `owner`): a memory is never shared by omission.
+ */
+export interface MemoryInsert extends Omit<Memory, 'createdAt' | 'updatedAt' | 'ownerActorId' | 'visibility'> {
+  ownerActorId?: string | null;
+  visibility?: MemoryVisibility;
   embedding: number[] | null;
   createdAt?: string;
 }
@@ -128,6 +145,18 @@ export interface MemoryFilter {
   /** Created at or after / before (UTC ISO 8601). */
   createdFrom?: string;
   createdTo?: string;
+  /** At least one of these tags. A tag is a signal the memory was learned from (an observation kind such as `approval.rejected`). */
+  tags?: string[];
+  /**
+   * Exact owner: only memories whose `ownerActorId` is this user; `null` means memories with no owner. Used by the write path so
+   * evidence of one user is never merged into another user's memory.
+   */
+  ownedBy?: string | null;
+  /**
+   * Reader scope: only memories this user may read, that is `ownerActorId = visibleTo` or `visibility = 'workspace'`. Every
+   * candidate generator applies it itself (vector, full text, structured), never only after ranking.
+   */
+  visibleTo?: string;
 }
 
 export interface MemoryListQuery {
@@ -175,7 +204,15 @@ export function matchesFilter(memory: Memory, filter?: MemoryFilter): boolean {
   if (f.sourceKind !== undefined && !memory.sourceRefs.some((s) => s.kind === f.sourceKind)) return false;
   if (f.createdFrom !== undefined && memory.createdAt < f.createdFrom) return false;
   if (f.createdTo !== undefined && memory.createdAt >= f.createdTo) return false;
+  if (f.tags?.length && !memory.provenance.signals.some((t) => f.tags?.includes(t))) return false;
+  if (f.ownedBy !== undefined && memory.ownerActorId !== f.ownedBy) return false;
+  if (f.visibleTo !== undefined && !isVisibleTo(memory, f.visibleTo)) return false;
   return true;
+}
+
+/** Reader scope: the user's own memories, plus those shared with the whole workspace. A memory with no owner is shared only by `workspace`. */
+export function isVisibleTo(memory: Pick<Memory, 'ownerActorId' | 'visibility'>, actorId: string): boolean {
+  return memory.visibility === 'workspace' || (actorId !== '' && memory.ownerActorId === actorId);
 }
 
 /** Opaque keyset cursor: base64url of `createdAt|id`. */

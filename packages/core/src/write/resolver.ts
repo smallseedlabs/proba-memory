@@ -26,7 +26,7 @@ export function contradicts(a: Stance, b: Stance): boolean {
 }
 
 /**
- * Decides what each candidate becomes, by nearest neighbours inside the workspace and the same category:
+ * Decides what each candidate becomes, by nearest neighbours inside the workspace, the same owner and the same category:
  *  - same meaning, same stance      -> merge (reinforce the existing memory, no new row);
  *  - same meaning, opposite stance  -> supersede (the newer evidence replaces the older memory);
  *  - related                        -> create, linked `supports` / `contradicts`;
@@ -36,7 +36,11 @@ export function contradicts(a: Stance, b: Stance): boolean {
 export class MemoryResolver {
   constructor(private readonly options: ResolverOptions) {}
 
-  async resolve(workspaceId: string, candidates: CandidateMemory[], vectors: number[][]): Promise<Resolution[]> {
+  /**
+   * `ownerActorId` keeps the decision inside one user's memories: evidence of one user is never merged into, or supersedes, a memory
+   * of another user (null: only memories that have no owner). Left out, the whole workspace is searched.
+   */
+  async resolve(workspaceId: string, candidates: CandidateMemory[], vectors: number[][], ownerActorId?: string | null): Promise<Resolution[]> {
     const { index, store, embedder, similarityThreshold, relatedThreshold } = this.options;
     const out: Resolution[] = [];
     for (let i = 0; i < candidates.length; i += 1) {
@@ -63,7 +67,7 @@ export class MemoryResolver {
         limit: 5,
         model: embedder.model,
         version: embedder.version,
-        filter: { categories: [candidate.category], statuses: ['active'] },
+        filter: { categories: [candidate.category], statuses: ['active'], ...(ownerActorId !== undefined ? { ownedBy: ownerActorId } : {}) },
       });
       const memories = new Map((await store.getMemories(workspaceId, hits.map((h) => h.id))).map((m) => [m.id, m]));
       // Best match first; hits whose memory vanished or is not active are skipped.

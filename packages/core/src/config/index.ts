@@ -5,6 +5,7 @@
  */
 
 import { hostname } from 'node:os';
+import { isAbsolute } from 'node:path';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
 import { DEFAULT_HALF_LIVES_DAYS, MEMORY_CATEGORIES, type MemoryCategory } from '@smallseedlabs/proba-memory-scoring';
@@ -179,6 +180,13 @@ export const envSchema = z.object({
   MEMORY_API_SEARCH_RATE_LIMIT_MAX: positiveInt(30),
   MEMORY_API_AUTH_FAILURE_LIMIT_MAX: positiveInt(30),
   MEMORY_API_AUTH_FAILURE_WINDOW_MS: positiveInt(900000),
+
+  // Context bridge (role `context-reader`): reads of ONE user's memories (search, by id, profiles) for the context bridge.
+  // Off by default. Enabling it needs both public key files: JWKS documents (Ed25519 public keys, one `kid` each) that verify the
+  // bridge's service token (CONTEXT_SERVICE_PUBLIC_KEY_FILE) and the Hub's act-as assertion (HUB_ASSERTION_PUBLIC_KEY_FILE).
+  MEMORY_API_CONTEXT_READER_ENABLED: bool('false'),
+  CONTEXT_SERVICE_PUBLIC_KEY_FILE: z.string().default(''),
+  HUB_ASSERTION_PUBLIC_KEY_FILE: z.string().default(''),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -355,6 +363,8 @@ export interface AppConfig {
     corsOrigins: string[];
     trustProxy: boolean;
     rateLimit: { max: number; windowMs: number; searchMax: number; authFailureMax: number; authFailureWindowMs: number };
+    /** The `context-reader` service role. `enabled` implies both key files are set. */
+    contextReader: { enabled: boolean; serviceKeyFile: string; assertionKeyFile: string };
   };
 }
 
@@ -419,6 +429,30 @@ export function loadConfig(env: EnvSource = process.env, options: LoadConfigOpti
     issues.push('RESOLVER_RELATED_THRESHOLD must not be greater than RESOLVER_SIMILARITY_THRESHOLD');
   }
   if (e.RETRIEVAL_DEFAULT_LIMIT > e.RETRIEVAL_MAX_LIMIT) issues.push('RETRIEVAL_DEFAULT_LIMIT must not be greater than RETRIEVAL_MAX_LIMIT');
+  const contextReader = {
+    enabled: e.MEMORY_API_CONTEXT_READER_ENABLED,
+    serviceKeyFile: e.CONTEXT_SERVICE_PUBLIC_KEY_FILE.trim(),
+    assertionKeyFile: e.HUB_ASSERTION_PUBLIC_KEY_FILE.trim(),
+  };
+  if (contextReader.enabled) {
+    // The role is never enabled without the keys that verify its callers, whatever the environment.
+    if (contextReader.serviceKeyFile === '') issues.push('CONTEXT_SERVICE_PUBLIC_KEY_FILE: required when MEMORY_API_CONTEXT_READER_ENABLED=true');
+    if (contextReader.assertionKeyFile === '') issues.push('HUB_ASSERTION_PUBLIC_KEY_FILE: required when MEMORY_API_CONTEXT_READER_ENABLED=true');
+    if (e.NODE_ENV === 'production') {
+      for (const [name, file] of [
+        ['CONTEXT_SERVICE_PUBLIC_KEY_FILE', contextReader.serviceKeyFile],
+        ['HUB_ASSERTION_PUBLIC_KEY_FILE', contextReader.assertionKeyFile],
+      ] as const) {
+        if (file !== '' && !isAbsolute(file)) issues.push(`${name}: must be an absolute path when NODE_ENV=production`);
+      }
+      if (contextReader.serviceKeyFile !== '' && contextReader.serviceKeyFile === contextReader.assertionKeyFile) {
+        issues.push('CONTEXT_SERVICE_PUBLIC_KEY_FILE and HUB_ASSERTION_PUBLIC_KEY_FILE must be different files: the bridge and the Hub never share a key');
+      }
+      if (e.MEMORY_API_TOKEN_VERIFIER === 'static') {
+        issues.push('MEMORY_API_TOKEN_VERIFIER=static is not available when NODE_ENV=production');
+      }
+    }
+  }
   if (issues.length > 0) throw new ConfigError(issues);
 
   return {
@@ -565,6 +599,7 @@ export function loadConfig(env: EnvSource = process.env, options: LoadConfigOpti
         authFailureMax: e.MEMORY_API_AUTH_FAILURE_LIMIT_MAX,
         authFailureWindowMs: e.MEMORY_API_AUTH_FAILURE_WINDOW_MS,
       },
+      contextReader,
     },
   };
 }

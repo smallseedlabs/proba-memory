@@ -10,7 +10,9 @@ import { ApiError } from './errors.js';
 
 /** Caps of the API. Exported so docs, the portal and tests agree with the code. */
 export const API_LIMITS = {
-  search: { maxQueryChars: 2000, defaultLimit: 10, maxLimit: 50, maxTokenBudget: 8000 },
+  search: { maxQueryChars: 2000, defaultLimit: 10, maxLimit: 50, maxTokenBudget: 8000, maxTags: 8, maxTagChars: 64 },
+  /** The `context-reader` role asks for fewer, smaller answers: at most 20 memories, and its default is 5. */
+  contextReader: { defaultLimit: 5, maxLimit: 20, maxTokenBudget: 4000 },
   list: { defaultLimit: MEMORY_LIST_DEFAULT_LIMIT, maxLimit: MEMORY_LIST_MAX_LIMIT },
   retrievals: { defaultLimit: 50, maxLimit: 100 },
   jobs: { defaultLimit: 50, maxLimit: 200 },
@@ -43,6 +45,12 @@ const listOf = <T extends z.ZodTypeAny>(item: T) =>
     return parts.map((x) => (typeof x === 'string' ? x.trim() : x)).filter((x) => x !== '');
   }, z.array(item).min(1).max(8));
 
+const tagSchema = z
+  .string()
+  .min(1)
+  .max(API_LIMITS.search.maxTagChars)
+  .regex(/^[A-Za-z0-9_.:-]+$/, 'letters, digits and _ . : - only');
+
 const categorySchema = z.enum(MEMORY_CATEGORIES);
 const statusSchema = z.enum(MEMORY_STATUSES);
 const sourceKindSchema = z.enum(SOURCE_KINDS);
@@ -51,6 +59,10 @@ const sourceKindSchema = z.enum(SOURCE_KINDS);
 export const filterBodySchema = z
   .object({
     categories: z.array(categorySchema).min(1).max(MEMORY_CATEGORIES.length).optional(),
+    /** The kinds of memory wanted: the same values as `categories` (use one of the two). */
+    kinds: z.array(categorySchema).min(1).max(MEMORY_CATEGORIES.length).optional(),
+    /** At least one of these tags: the signals a memory was learned from, such as `approval.rejected`. */
+    tags: z.array(tagSchema).min(1).max(API_LIMITS.search.maxTags).optional(),
     /** Administrators only: viewers always get active memories. */
     statuses: z.array(statusSchema).min(1).max(MEMORY_STATUSES.length).optional(),
     minConfidence: unit.optional(),
@@ -70,6 +82,8 @@ export const searchBodySchema = z
     limit: z.number().int().min(1).max(API_LIMITS.search.maxLimit).optional(),
     tokenBudget: z.number().int().min(1).max(API_LIMITS.search.maxTokenBudget).optional(),
     rerank: z.boolean().optional(),
+    /** Drop results whose score is below this (0..1). The scoring profile's own floor still applies. */
+    minScore: unit.optional(),
     /** Administrators only: return every candidate with its features. */
     includeCandidates: z.boolean().optional(),
   })
@@ -133,9 +147,13 @@ export type JobRunsQuery = z.output<typeof jobRunsQuerySchema>;
 
 export const noQuerySchema = z.object({}).strict();
 
+/** The two parameters every `context-reader` call carries; checked against the assertion before any route runs. */
+export const actAsParamsSchema = z.object({ actorId: z.string().min(1).max(API_LIMITS.idMaxLength), workspaceId: z.string().min(1).max(API_LIMITS.idMaxLength) });
+
 /** Turn the validated filter fields into the store's MemoryFilter (dropping what is not set). */
 export function toMemoryFilter(f: {
   categories?: readonly string[];
+  tags?: readonly string[];
   statuses?: readonly string[];
   minConfidence?: number;
   minImportance?: number;
@@ -147,6 +165,7 @@ export function toMemoryFilter(f: {
 }): MemoryFilter {
   const out: MemoryFilter = {};
   if (f.categories?.length) out.categories = [...new Set(f.categories)] as MemoryFilter['categories'];
+  if (f.tags?.length) out.tags = [...new Set(f.tags)];
   if (f.statuses?.length) out.statuses = [...new Set(f.statuses)] as MemoryFilter['statuses'];
   if (f.minConfidence !== undefined) out.minConfidence = f.minConfidence;
   if (f.minImportance !== undefined) out.minImportance = f.minImportance;
