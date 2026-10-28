@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- the spy forwards arbitrary pg arguments */
 /**
  * Memory ownership on Postgres: the reader scope is part of the SQL of every candidate generator (vector, full text, structured and
  * by id), and migration 0008 adds the columns, backfills them from the evidence, and can be rolled back.
