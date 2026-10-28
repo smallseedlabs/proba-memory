@@ -127,7 +127,8 @@ export interface Neighbour {
 
 /**
  * Active memories close to `memory`, in the vector space of the model that embedded it (so a half-migrated
- * workspace never compares vectors of different models). Workspace-scoped by the index; `memory` itself is excluded.
+ * workspace never compares vectors of different models). Workspace-scoped by the index and limited to the memory's own owner (a user's
+ * memories are consolidated, linked and judged against each other, never against another user's); `memory` itself is excluded.
  */
 export async function findNeighbours(args: {
   workspaceId: string;
@@ -152,6 +153,7 @@ export async function findNeighbours(args: {
     filter: {
       categories: args.categories,
       statuses: ['active'],
+      ownedBy: memory.ownerActorId,
       ...(args.createdFrom ? { createdFrom: args.createdFrom } : {}),
       ...(args.createdTo ? { createdTo: args.createdTo } : {}),
     },

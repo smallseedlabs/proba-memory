@@ -20,7 +20,7 @@ import {
   type LlmRequest,
   type Observation,
 } from '@smallseedlabs/proba-memory-core';
-import { makeSecrets } from '@smallseedlabs/proba-memory-core/testing';
+import { makeMemoryInsert, makeSecrets } from '@smallseedlabs/proba-memory-core/testing';
 import { DEFAULT_SCORING_CONFIG_V1 } from '@smallseedlabs/proba-memory-scoring';
 import { HashEmbedder } from '../embedders/index.js';
 import { ScriptedLlmProvider, type Responder } from '../llm/index.js';
@@ -248,6 +248,54 @@ describe('write path', () => {
     const s = stack({ responder: dup });
     const r = await s.pipeline.process(observation('x'));
     expect(r.created).toHaveLength(1);
+  });
+
+  describe('ownership', () => {
+    const FACT = 'Never use exclamation marks in ad copy.';
+    const byUser = (id: string): Partial<Observation> => ({ actor: { type: 'user', id } });
+
+    it('gives a memory the user who acted as its owner, visible to that user only by default', async () => {
+      const s = stack();
+      await s.pipeline.process(observation(FACT, byUser('user-a')));
+      const [m] = await s.active();
+      expect(m).toMatchObject({ ownerActorId: 'user-a', visibility: 'owner' });
+    });
+
+    it('falls back to the user the event is about, and to no owner when no user is behind it', async () => {
+      const s = stack();
+      await s.pipeline.process(observation('Spend reports go to finance on Monday.', { userId: 'user-b', actor: { type: 'system', id: 'brain' } }));
+      await s.pipeline.process(observation('Headlines stay under forty characters.', { actor: { type: 'system', id: 'brain' } }));
+      const owners = Object.fromEntries((await s.active()).map((m) => [m.content.slice(0, 5), m.ownerActorId]));
+      expect(owners).toEqual({ 'Spend': 'user-b', 'Headl': null });
+    });
+
+    it('never merges what two users learned, even when it is the same fact', async () => {
+      const s = stack();
+      await s.pipeline.process(observation(FACT, byUser('user-a')));
+      await s.pipeline.process(observation(FACT, byUser('user-b')));
+      const memories = await s.active();
+      expect(memories).toHaveLength(2);
+      expect(memories.map((m) => m.ownerActorId).sort()).toEqual(['user-a', 'user-b']);
+      expect(memories.every((m) => m.evidenceCount === 1)).toBe(true);
+    });
+
+    it('still reinforces a memory with the same user’s repeated evidence', async () => {
+      const s = stack();
+      await s.pipeline.process(observation(FACT, byUser('user-a')));
+      await s.pipeline.process(observation(FACT, byUser('user-a')));
+      const memories = await s.active();
+      expect(memories).toHaveLength(1);
+      expect(memories[0].evidenceCount).toBe(2);
+    });
+
+    it('does not let one user’s contradiction supersede another user’s memory', async () => {
+      const s = stack();
+      const text = 'Countdown timers in banners are fine.';
+      await s.pipeline.process(observation(text, { ...byUser('user-a'), signal: { polarity: 'positive', strength: 0.9 } }));
+      await s.pipeline.process(observation(text, { ...byUser('user-b'), signal: { polarity: 'negative', strength: 1 } }));
+      const memories = await s.all();
+      expect(memories.map((m) => m.status)).toEqual(['active', 'active']);
+    });
   });
 
   describe('failure handling', () => {
@@ -479,6 +527,102 @@ describe('read path', () => {
       await expect(s.retrieval.search(ctx(), { query })).resolves.toBeDefined();
     }
     expect((await s.all()).length).toBeGreaterThan(0);
+  });
+
+  describe('reader scope', () => {
+    const scoped = (userId: string, trace = 'trace-scope') => ({ ...ctx(trace), actor: { type: 'service' as const, id: 'context-reader' }, visibleTo: userId });
+    const seedOwners = async (options: StackOptions = {}) => {
+      const s = stack(options);
+      await s.profiles.ensureDefault();
+      const topic = 'banner countdown timer discount for the autumn launch';
+      await s.pipeline.process(observation(`${topic}: user A note`, { actor: { type: 'user', id: 'user-a' } }));
+      await s.pipeline.process(observation(`${topic}: user B note CANARY-B`, { actor: { type: 'user', id: 'user-b' } }));
+      await s.pipeline.process(observation(`${topic}: system note CANARY-ORPHAN`, { actor: { type: 'system', id: 'brain' } }));
+      await s.pipeline.process(observation(`${topic}: other workspace CANARY-WS`, { workspaceId: OTHER, actor: { type: 'user', id: 'user-a' } }));
+      return s;
+    };
+
+    it('returns the reader’s own memories and nobody else’s, whatever the query', async () => {
+      const s = await seedOwners();
+      for (const query of [`banner countdown timer discount`, 'CANARY-B', 'CANARY-ORPHAN', 'CANARY-WS', 'note']) {
+        const r = await s.retrieval.search({ ...scoped('user-a'), includeCandidates: true }, { query, limit: 50 });
+        const text = JSON.stringify(r);
+        expect(text, query).not.toMatch(/CANARY/);
+        expect(r.results.every((x) => x.content.includes('user A note'))).toBe(true);
+      }
+      const other = await s.retrieval.search(scoped('user-b'), { query: 'CANARY-B', limit: 50 });
+      expect(other.results.map((x) => x.content).join()).toContain('CANARY-B');
+    });
+
+    it('shares what is marked workspace-visible, including memories with no owner', async () => {
+      const s = await seedOwners();
+      const [vector] = await s.embedder.embed(['banner countdown timer discount for the autumn launch: shared guideline SHARED-ORPHAN']);
+      const shared = makeMemoryInsert(WS, {
+        content: 'banner countdown timer discount for the autumn launch: shared guideline SHARED-ORPHAN',
+        ownerActorId: null,
+        visibility: 'workspace',
+        embedding: vector,
+        embeddingModel: s.embedder.model,
+        embeddingVersion: s.embedder.version,
+      });
+      await s.store.transaction((tx) => tx.insertMemory(shared));
+      const r = await s.retrieval.search(scoped('user-a'), { query: 'banner countdown timer discount SHARED-ORPHAN', limit: 50 });
+      expect(r.results.map((x) => x.id)).toContain(shared.id);
+      expect(JSON.stringify(r)).not.toMatch(/CANARY/);
+    });
+
+    it('holds even when an index or text search ignores the filter: memories are looked up under the scope', async () => {
+      const s = await seedOwners();
+      const everything = Object.create(s.index) as typeof s.index;
+      everything.search = async (q) => s.index.search({ ...q, filter: { ...q.filter, visibleTo: undefined } });
+      const leakyStore = Object.create(s.store) as typeof s.store;
+      leakyStore.searchText = async (q) => s.store.searchText({ ...q, filter: { ...q.filter, visibleTo: undefined } });
+      const hit = await s.index.search({ workspaceId: WS, vector: (await s.embedder.embed(['banner countdown timer discount']))[0], limit: 10, model: 'local-hash', version: '1' });
+      expect(hit.length).toBe(3);
+      const retrieval = new RetrievalService({
+        store: leakyStore,
+        index: everything,
+        embedder: s.embedder,
+        profiles: s.profiles,
+        logStore: s.logStore,
+        tokens: new ApproxTokenCounter(),
+        emitter: createBusAuditEmitter({ bus: s.bus, topic: TOPIC, service: 'memory-test', defaultWorkspaceId: WS, clock: s.clock, ids: new SequentialIdGenerator(), logger: s.logger, failureMode: 'throw' }),
+        clock: s.clock,
+        ids: new SequentialIdGenerator(),
+        logger: s.logger,
+        redactor: new Redactor({ pii: true }),
+        llm: s.llm,
+        settings: { defaultLimit: 10, maxLimit: 50, maxQueryChars: 500, profileName: 'default', rerankEnabled: false },
+        service: 'memory-api',
+      });
+      const r = await retrieval.search({ ...scoped('user-a'), includeCandidates: true }, { query: 'banner countdown timer discount CANARY-B CANARY-ORPHAN', limit: 50 });
+      expect(JSON.stringify(r.results)).not.toMatch(/CANARY/);
+    });
+
+    it('refuses a blank scope instead of reading workspace-wide', async () => {
+      const s = await seedOwners();
+      await expect(s.retrieval.search(scoped('  '), { query: 'banner' })).rejects.toBeInstanceOf(RetrievalInputError);
+    });
+
+    it('applies tags, kinds and a minimum score, and rejects a score outside 0 to 1', async () => {
+      const s = await seedOwners();
+      const r = await s.retrieval.search(scoped('user-a'), { query: 'banner countdown timer discount', limit: 50, minScore: 0.999 });
+      expect(r.results).toEqual([]);
+      await expect(s.retrieval.search(scoped('user-a'), { query: 'banner', minScore: 1.5 })).rejects.toBeInstanceOf(RetrievalInputError);
+      const tagged = await s.retrieval.search(scoped('user-a'), { query: 'banner countdown timer discount', limit: 50, filter: { tags: ['no.such.signal'] } });
+      expect(tagged.results).toEqual([]);
+    });
+
+    it('audits the read with who asked, the assertion and the ids, never the text', async () => {
+      const s = await seedOwners();
+      await s.events();
+      const r = await s.retrieval.search({ ...scoped('user-a'), auditDetails: { caller: 'context-reader', assertionJti: 'a-1' } }, { query: 'banner countdown timer discount' });
+      const events = (await s.events()).filter((e) => e.action === 'memory.retrieved');
+      expect(events).toHaveLength(1);
+      expect(events[0].details).toMatchObject({ caller: 'context-reader', assertionJti: 'a-1', operation: 'search', count: r.results.length, ids: r.results.map((x) => x.id) });
+      expect(events[0].actor).toMatchObject({ id: 'context-reader' });
+      expect(JSON.stringify(events)).not.toMatch(/user A note|banner countdown/);
+    });
   });
 
   describe('scoring profiles', () => {

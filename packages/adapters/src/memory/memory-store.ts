@@ -3,6 +3,7 @@ import {
   decodeCursor,
   defaultFilter,
   encodeCursor,
+  isVisibleTo,
   matchesFilter,
   MEMORY_LIST_DEFAULT_LIMIT,
   MEMORY_LIST_MAX_LIMIT,
@@ -71,15 +72,15 @@ export class InMemoryMemoryStore implements MemoryStore, EmbeddingMigrationStore
   // --- reads (shared with transactions) ---
 
   private readonly reader = (state: () => State) => ({
-    getMemory: async (workspaceId: string, id: string): Promise<Memory | null> => {
+    getMemory: async (workspaceId: string, id: string, visibleTo?: string): Promise<Memory | null> => {
       const row = state().rows.get(id);
-      return row && row.memory.workspaceId === workspaceId ? clone(row.memory) : null;
+      return row && row.memory.workspaceId === workspaceId && (visibleTo === undefined || isVisibleTo(row.memory, visibleTo)) ? clone(row.memory) : null;
     },
-    getMemories: async (workspaceId: string, ids: string[]): Promise<Memory[]> => {
+    getMemories: async (workspaceId: string, ids: string[], visibleTo?: string): Promise<Memory[]> => {
       const out: Memory[] = [];
       for (const id of new Set(ids)) {
         const row = state().rows.get(id);
-        if (row && row.memory.workspaceId === workspaceId) out.push(clone(row.memory));
+        if (row && row.memory.workspaceId === workspaceId && (visibleTo === undefined || isVisibleTo(row.memory, visibleTo))) out.push(clone(row.memory));
       }
       return out;
     },
@@ -150,7 +151,7 @@ export class InMemoryMemoryStore implements MemoryStore, EmbeddingMigrationStore
         const { embedding, createdAt, ...rest } = m;
         const at = iso(createdAt ?? new Date().toISOString());
         state().rows.set(m.id, {
-          memory: clone({ ...rest, validFrom: iso(rest.validFrom), lastReinforcedAt: iso(rest.lastReinforcedAt), createdAt: at, updatedAt: at } as Memory),
+          memory: clone({ ...rest, ownerActorId: rest.ownerActorId ?? null, visibility: rest.visibility ?? 'owner', validFrom: iso(rest.validFrom), lastReinforcedAt: iso(rest.lastReinforcedAt), createdAt: at, updatedAt: at } as Memory),
           embedding: embedding ? [...embedding] : null,
           staged: null,
         });

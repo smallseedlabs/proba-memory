@@ -1,0 +1,22 @@
+{
+  "description": "The X-Act-As assertion is required.",
+  "request": {
+    "method": "GET",
+    "path": "/v1/memories/aa0e8400-e29b-41d4-a716-000000000001",
+    "query": {
+      "actorId": "660e8400-e29b-41d4-a716-446655440001",
+      "workspaceId": "seedbed"
+    },
+    "headers": {
+      "Authorization": "Bearer <service token>"
+    }
+  },
+  "response": {
+    "status": 400,
+    "body": {
+      "error": "act_as_required",
+      "message": "The X-Act-As assertion is required.",
+      "traceId": "00000000-0000-4000-8000-000000000000"
+    }
+  }
+}

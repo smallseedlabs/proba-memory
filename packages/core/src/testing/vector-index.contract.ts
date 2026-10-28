@@ -135,6 +135,24 @@ export function runVectorIndexContract(name: string, factory: () => Promise<Vect
       expect((await h.index.getVectors(ws, [id])).size).toBe(0);
     });
 
+    it('applies the reader scope inside the search: a nearer memory of another user never uses up the limit', async () => {
+      const h = await make();
+      const ws = uniqueName('ws');
+      const q = seededVector(h.index.dimension, 7);
+      const theirs = await put(h, ws, q, { ownerActorId: 'user-b', visibility: 'owner' });
+      const orphan = await put(h, ws, nearVector(q, 0.02, 2), { ownerActorId: null, visibility: 'owner' });
+      const shared = await put(h, ws, nearVector(q, 0.05, 3), { ownerActorId: null, visibility: 'workspace' });
+      const mine = await put(h, ws, nearVector(q, 0.3, 4), { ownerActorId: 'user-a', visibility: 'owner' });
+      const scoped = await h.index.search({ workspaceId: ws, vector: q, limit: 2, model: MODEL, version: VERSION, filter: { visibleTo: 'user-a' } });
+      expect(scoped.map((x) => x.id)).toEqual([shared, mine]);
+      expect(scoped.map((x) => x.id)).not.toContain(theirs);
+      expect(scoped.map((x) => x.id)).not.toContain(orphan);
+      const unscoped = await h.index.search({ workspaceId: ws, vector: q, limit: 10, model: MODEL, version: VERSION });
+      expect(unscoped).toHaveLength(4);
+      const owned = await h.index.search({ workspaceId: ws, vector: q, limit: 10, model: MODEL, version: VERSION, filter: { ownedBy: 'user-b' } });
+      expect(owned.map((x) => x.id)).toEqual([theirs]);
+    });
+
     it('answers ping and reports a dimension', async () => {
       const h = await make();
       await expect(h.index.ping()).resolves.toBeUndefined();

@@ -1,0 +1,23 @@
+{
+  "description": "The assertion is not valid (here: it lists another audience).",
+  "request": {
+    "method": "GET",
+    "path": "/v1/profiles",
+    "query": {
+      "actorId": "660e8400-e29b-41d4-a716-446655440001",
+      "workspaceId": "seedbed"
+    },
+    "headers": {
+      "Authorization": "Bearer <service token>",
+      "X-Act-As": "<act-as assertion>"
+    }
+  },
+  "response": {
+    "status": 403,
+    "body": {
+      "error": "act_as_invalid",
+      "message": "The X-Act-As assertion is not valid.",
+      "traceId": "00000000-0000-4000-8000-000000000000"
+    }
+  }
+}

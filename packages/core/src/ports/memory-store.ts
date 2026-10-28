@@ -6,7 +6,8 @@
  * emitter (outbox) and the retrieval log so that they commit in the same transaction.
  *
  * Every method that touches memories takes the workspace id and MUST NOT return or change anything
- * of another workspace: tenant isolation is part of the contract.
+ * of another workspace: tenant isolation is part of the contract. A read that names `visibleTo` (or a filter with `visibleTo`)
+ * MUST also return nothing the user may not read: their own memories and those with visibility `workspace`.
  */
 
 import type {
@@ -25,9 +26,10 @@ import type {
 } from '../domain/index.js';
 
 export interface MemoryReader {
-  getMemory(workspaceId: string, id: string): Promise<Memory | null>;
-  /** The memories that exist in the workspace (missing or foreign ids are simply absent). Order unspecified. */
-  getMemories(workspaceId: string, ids: string[]): Promise<Memory[]>;
+  /** `visibleTo` (a user id) limits the read to what that user may read: a memory of another user answers null, like a missing one. */
+  getMemory(workspaceId: string, id: string, visibleTo?: string): Promise<Memory | null>;
+  /** The memories that exist in the workspace (missing or foreign ids are simply absent). Order unspecified. `visibleTo` as for getMemory. */
+  getMemories(workspaceId: string, ids: string[], visibleTo?: string): Promise<Memory[]>;
   /** Keyset-paginated, newest first. Filters default to active memories. */
   listMemories(query: MemoryListQuery): Promise<MemoryPage>;
   /** Full-text candidates (best first). Honours the filter and returns only active memories unless the filter says otherwise. */

@@ -1,13 +1,45 @@
-import type { VerifiedIdentity } from '@smallseedlabs/proba-memory-core';
+import { CONTEXT_READER_ROLE, type ActAsAssertionClaims, type VerifiedIdentity } from '@smallseedlabs/proba-memory-core';
 
-export type Role = 'viewer' | 'admin';
+export type Role = 'viewer' | 'admin' | typeof CONTEXT_READER_ROLE;
 
-/** The authenticated, authorised caller. The workspace is decided here, from configuration, never by the request. */
+/** Who a `context-reader` call acts for, as the Hub's assertion states it. */
+export interface ActAs {
+  /** The user (assertion `sub`). */
+  actorId: string;
+  workspaceId: string;
+  goalId: string;
+  threadId: string;
+  /** Id of the assertion. */
+  jti: string;
+}
+
+/** The authenticated, authorised caller. The workspace is decided here, from configuration or the assertion, never by the request. */
 export interface Session {
   subject: string;
   email: string;
   role: Role;
   workspaceId: string;
+  /** `context-reader` only: the user and workspace the call acts for, and the ids of the two tokens it carried. */
+  actAs?: ActAs;
+  tokenJti?: string;
+}
+
+/**
+ * The routes the `context-reader` role may call: search, one memory by id and the scoring profiles, all limited to what the user may
+ * read. Keys are `METHOD route-pattern` as Fastify reports them. Everything else (listing, retrieval logs, job runs, the session)
+ * answers 403 to this role.
+ */
+export const CONTEXT_READER_ROUTES: ReadonlySet<string> = new Set(['POST /v1/memories/search', 'GET /v1/memories/:id', 'GET /v1/profiles']);
+
+export function sessionFromAssertion(assertion: ActAsAssertionClaims, tokenJti: string): Session {
+  return {
+    subject: CONTEXT_READER_ROLE,
+    email: '',
+    role: CONTEXT_READER_ROLE,
+    workspaceId: assertion.workspaceId,
+    actAs: { actorId: assertion.sub, workspaceId: assertion.workspaceId, goalId: assertion.goalId, threadId: assertion.threadId, jti: assertion.jti },
+    tokenJti,
+  };
 }
 
 export interface AccessPolicy {

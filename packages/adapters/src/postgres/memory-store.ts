@@ -27,7 +27,7 @@ import { iso, isoOrNull, toVectorLiteral, withTransaction, type PgQueryable } fr
 // The vector and the generated full-text column are never read back with the row.
 const MEMORY_COLUMNS = `id, workspace_id, category, content, summary, embedding_model, embedding_version, importance, confidence,
   usefulness, status, supersedes_id, valid_from, valid_to, last_accessed_at, access_count, last_reinforced_at, decayed_at,
-  evidence_count, goal_id, thread_id, source_refs, provenance, created_at, updated_at`;
+  evidence_count, goal_id, thread_id, owner_actor_id, visibility, source_refs, provenance, created_at, updated_at`;
 
 const OBSERVATION_COLUMNS = `id, workspace_id, source, source_ref, kind, occurred_at, trace_id, span_id, goal_id, thread_id, user_id,
   campaign_id, actor, target, text, facts, signal, significance, status, attempts, last_error, processed_at, created_at`;
@@ -57,6 +57,8 @@ function toMemory(r: Row): Memory {
     evidenceCount: Number(r.evidence_count),
     goalId: (r.goal_id as string | null) ?? null,
     threadId: (r.thread_id as string | null) ?? null,
+    ownerActorId: (r.owner_actor_id as string | null) ?? null,
+    visibility: r.visibility as Memory['visibility'],
     sourceRefs: (r.source_refs as Memory['sourceRefs']) ?? [],
     provenance: r.provenance as Memory['provenance'],
     createdAt: iso(r.created_at),
@@ -116,6 +118,11 @@ export function appendFilterSql(filter: MemoryFilter | undefined, where: string[
   if (f.sourceKind !== undefined) where.push(`${col('source_refs')} @> ${add(JSON.stringify([{ kind: f.sourceKind }]))}::jsonb`);
   if (f.createdFrom !== undefined) where.push(`${col('created_at')} >= ${add(f.createdFrom)}::timestamptz`);
   if (f.createdTo !== undefined) where.push(`${col('created_at')} < ${add(f.createdTo)}::timestamptz`);
+  if (f.tags?.length) where.push(`${col('provenance')} -> 'signals' ?| ${add(f.tags)}::text[]`);
+  if (f.ownedBy === null) where.push(`${col('owner_actor_id')} IS NULL`);
+  else if (f.ownedBy !== undefined) where.push(`${col('owner_actor_id')} = ${add(f.ownedBy)}`);
+  // Reader scope: part of the statement of every candidate generator (vector, full text, structured), not a step after ranking.
+  if (f.visibleTo !== undefined) where.push(`(${col('owner_actor_id')} = ${add(f.visibleTo)} OR ${col('visibility')} = 'workspace')`);
 }
 
 /** A tsquery that matches any of the words: letters and digits only, so user text can never inject operators. */
@@ -131,19 +138,28 @@ class PgReader {
     private readonly lockRows: boolean
   ) {}
 
-  async getMemory(workspaceId: string, id: string): Promise<Memory | null> {
+  async getMemory(workspaceId: string, id: string, visibleTo?: string): Promise<Memory | null> {
     if (!isUuid(id)) return null;
-    const r = await this.db.query(
-      `SELECT ${MEMORY_COLUMNS} FROM memories WHERE workspace_id = $1 AND id = $2${this.lockRows ? ' FOR UPDATE' : ''}`,
-      [workspaceId, id]
-    );
+    const params: unknown[] = [workspaceId, id];
+    const where = ['workspace_id = $1', 'id = $2'];
+    if (visibleTo !== undefined) {
+      params.push(visibleTo);
+      where.push(`(owner_actor_id = $3 OR visibility = 'workspace')`);
+    }
+    const r = await this.db.query(`SELECT ${MEMORY_COLUMNS} FROM memories WHERE ${where.join(' AND ')}${this.lockRows ? ' FOR UPDATE' : ''}`, params);
     return r.rows[0] ? toMemory(r.rows[0]) : null;
   }
 
-  async getMemories(workspaceId: string, ids: string[]): Promise<Memory[]> {
+  async getMemories(workspaceId: string, ids: string[], visibleTo?: string): Promise<Memory[]> {
     const wanted = onlyUuids(ids);
     if (wanted.length === 0) return [];
-    const r = await this.db.query(`SELECT ${MEMORY_COLUMNS} FROM memories WHERE workspace_id = $1 AND id = ANY($2::uuid[])`, [workspaceId, wanted]);
+    const params: unknown[] = [workspaceId, wanted];
+    const where = ['workspace_id = $1', 'id = ANY($2::uuid[])'];
+    if (visibleTo !== undefined) {
+      params.push(visibleTo);
+      where.push(`(owner_actor_id = $3 OR visibility = 'workspace')`);
+    }
+    const r = await this.db.query(`SELECT ${MEMORY_COLUMNS} FROM memories WHERE ${where.join(' AND ')}`, params);
     return r.rows.map(toMemory);
   }
 
@@ -271,9 +287,9 @@ class PgTx extends PgReader implements MemoryStoreTx {
     await this.db.query(
       `INSERT INTO memories (id, workspace_id, category, content, summary, embedding, embedding_model, embedding_version, importance, confidence,
          usefulness, status, supersedes_id, valid_from, valid_to, last_accessed_at, access_count, last_reinforced_at, decayed_at, evidence_count,
-         goal_id, thread_id, source_refs, provenance, created_at, updated_at)
+         goal_id, thread_id, owner_actor_id, visibility, source_refs, provenance, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9, $10, $11, $12, $13, $14::timestamptz, $15::timestamptz, $16::timestamptz, $17,
-         $18::timestamptz, $19::timestamptz, $20, $21, $22, $23::jsonb, $24::jsonb, $25::timestamptz, $25::timestamptz)`,
+         $18::timestamptz, $19::timestamptz, $20, $21, $22, $23, $24, $25::jsonb, $26::jsonb, $27::timestamptz, $27::timestamptz)`,
       [
         m.id, m.workspaceId, m.category, m.content, m.summary,
         m.embedding ? toVectorLiteral(m.embedding) : null,
@@ -282,7 +298,7 @@ class PgTx extends PgReader implements MemoryStoreTx {
         m.importance, m.confidence, m.usefulness, m.status, m.supersedesId,
         iso(m.validFrom), m.validTo ? iso(m.validTo) : null, m.lastAccessedAt ? iso(m.lastAccessedAt) : null, m.accessCount,
         iso(m.lastReinforcedAt), m.decayedAt ? iso(m.decayedAt) : null, m.evidenceCount,
-        m.goalId, m.threadId, JSON.stringify(m.sourceRefs), JSON.stringify(m.provenance), at,
+        m.goalId, m.threadId, m.ownerActorId ?? null, m.visibility ?? 'owner', JSON.stringify(m.sourceRefs), JSON.stringify(m.provenance), at,
       ]
     );
   }

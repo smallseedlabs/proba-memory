@@ -17,7 +17,7 @@ logs), stores that as typed memories in Postgres + pgvector, keeps them current 
   and emits its own `memory.*` audit events.
 
 Design, diagrams, ports and data model: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-HTTP contract: [docs/openapi.yaml](docs/openapi.yaml).
+HTTP contract: [docs/openapi.yaml](docs/openapi.yaml). Behind a flag the API also serves a narrow, per-user service role for the context bridge: [docs/CONTEXT_READER.md](docs/CONTEXT_READER.md).
 
 ## Quickstart (everything local, no external provider)
 
@@ -183,7 +183,7 @@ apps/memory-ingestor sources to write path, seed CLI
 apps/memory-jobs     scheduler and runner, the eight jobs, versioned job config, run-job and job-config CLIs
 apps/memory-eval     evaluation harness: golden sets, metrics, backtest, comparison, regression gate, shadow logs
 migrations/postgres  numbered SQL migrations
-docs                 ARCHITECTURE.md, EVALUATION.md, openapi.yaml
+docs                 ARCHITECTURE.md, EVALUATION.md, CONTEXT_READER.md, openapi.yaml, contracts/
 ```
 
 ## Development

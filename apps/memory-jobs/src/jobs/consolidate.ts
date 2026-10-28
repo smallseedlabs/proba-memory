@@ -191,6 +191,11 @@ export class ConsolidateJob implements Job {
       const observationIds = uniq(ordered.flatMap((m) => m.provenance.observationIds)).slice(-MAX_PROVENANCE_IDS);
       const sourceRefs: SourceRef[] = [];
       for (const ref of ordered.flatMap((m) => m.sourceRefs)) if (!sourceRefs.some((r) => r.ref === ref.ref)) sourceRefs.push(ref);
+      // A consolidated memory keeps the owner its sources share. Sources of different owners give a memory with no owner that is not
+      // shared: merging what several users said never widens who may read it.
+      const owners = uniq(ordered.map((m) => m.ownerActorId));
+      const ownerActorId = owners.length === 1 ? owners[0] : null;
+      const visibility = ordered.every((m) => m.visibility === 'workspace') ? 'workspace' : 'owner';
       const goalIds = uniq(ordered.map((m) => m.goalId));
       const threadIds = uniq(ordered.map((m) => m.threadId));
       const memory: MemoryInsert = {
@@ -216,6 +221,8 @@ export class ConsolidateJob implements Job {
         evidenceCount: ordered.reduce((s, m) => s + m.evidenceCount, 0),
         goalId: goalIds.length === 1 ? goalIds[0] : null,
         threadId: threadIds.length === 1 ? threadIds[0] : null,
+        ownerActorId,
+        visibility,
         sourceRefs: sourceRefs.slice(-MAX_SOURCE_REFS),
         provenance: {
           extractor: { provider: llm.name, model: reply.model, promptVersion: 'consolidate-1' },

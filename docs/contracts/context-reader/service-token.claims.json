@@ -1,0 +1,16 @@
+{
+  "description": "Claims of the bridge's service token (EdDSA; header carries the kid of a key in CONTEXT_SERVICE_PUBLIC_KEY_FILE). exp is at most 120 seconds after iat.",
+  "header": {
+    "alg": "EdDSA",
+    "typ": "JWT",
+    "kid": "bridge-key-1"
+  },
+  "claims": {
+    "iss": "proba-context",
+    "aud": "proba-memory",
+    "sub": "context-reader",
+    "iat": 1761386400,
+    "exp": 1761386460,
+    "jti": "f3a9c1d0-5b7e-4a52-9d59-2d1f6a0b8c11"
+  }
+}

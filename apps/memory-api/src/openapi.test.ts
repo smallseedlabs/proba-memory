@@ -11,8 +11,11 @@ import yaml from 'js-yaml';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MEMORY_CATEGORIES, MEMORY_STATUSES } from '@smallseedlabs/proba-memory-core';
 import { makeLogEntry } from '@smallseedlabs/proba-memory-core/testing';
+import { CONTEXT_READER_ROUTES } from './authorization.js';
 import { API_LIMITS, SOURCE_KINDS, filterBodySchema, jobRunsQuerySchema, listQuerySchema, searchBodySchema } from './http/schemas.js';
 import { SEED, TOKENS, WORKSPACE, createHarness, type Harness } from './harness.testing.js';
+
+const routeKey = (method: string, path: string): string => `${method.toUpperCase()} ${path.replace(/\{(\w+)\}/g, ':$1')}`;
 
 // Both packages are CommonJS: load them the way Node does, whatever the test runner's interop.
 const nodeRequire = createRequire(import.meta.url);
@@ -54,7 +57,14 @@ describe('docs/openapi.yaml', () => {
     const ids = operations.map((o) => o.op.operationId);
     expect(new Set(ids).size).toBe(ids.length);
     expect(doc.components.securitySchemes.firebaseIdToken).toMatchObject({ type: 'http', scheme: 'bearer' });
+    expect(doc.components.securitySchemes.contextServiceToken).toMatchObject({ type: 'http', scheme: 'bearer' });
+    expect(doc.components.securitySchemes.actAsAssertion).toMatchObject({ type: 'apiKey', in: 'header', name: 'X-Act-As' });
     expect(doc.security).toEqual([{ firebaseIdToken: [] }]);
+  });
+
+  it('lists the context-reader routes the server allows, and no others', () => {
+    const documented = operations.filter((o) => o.op.security?.some((s: object) => 'contextServiceToken' in s)).map((o) => routeKey(o.method, o.path));
+    expect(new Set(documented)).toEqual(new Set(CONTEXT_READER_ROUTES));
   });
 
   it('describes reads, plus search as the only POST (nothing that writes, edits or deletes a memory)', () => {
@@ -79,9 +89,14 @@ describe('docs/openapi.yaml', () => {
   });
 
   it('keeps public routes public and every /v1 route authenticated, documenting 401, 403 and 429', () => {
-    for (const { path, op } of operations) {
+    for (const { method, path, op } of operations) {
       if (path.startsWith('/v1')) {
-        expect(op.security, path).toBeUndefined();
+        // The routes the context-reader role may call say so: the bridge's two credentials are an alternative to the ID token.
+        if (CONTEXT_READER_ROUTES.has(routeKey(method, path))) {
+          expect(op.security, path).toEqual([{ firebaseIdToken: [] }, { contextServiceToken: [], actAsAssertion: [] }]);
+        } else {
+          expect(op.security, path).toBeUndefined();
+        }
         expect(Object.keys(op.responses), path).toEqual(expect.arrayContaining(['401', '403', '429']));
       } else {
         expect(op.security, path).toEqual([]);
@@ -89,10 +104,22 @@ describe('docs/openapi.yaml', () => {
     }
   });
 
-  it('has no workspace parameter or request field anywhere', () => {
-    for (const { op } of operations) for (const p of (op.parameters ?? []).map(resolveRef)) expect(p.name.toLowerCase()).not.toContain('workspace');
-    expect(Object.keys(doc.components.schemas.SearchRequest.properties)).not.toContain('workspaceId');
+  it('has a workspace parameter only for the context-reader role, on the routes it may call', () => {
+    for (const { method, path, op } of operations) {
+      const workspace = (op.parameters ?? []).map(resolveRef).filter((p: any) => p.name.toLowerCase().includes('workspace'));
+      for (const p of workspace) expect(p['x-roles'], `${path} ${p.name}`).toEqual(['context-reader']);
+      if (workspace.length > 0) expect(CONTEXT_READER_ROUTES.has(routeKey(method, path)), path).toBe(true);
+    }
     expect(Object.keys(doc.components.schemas.SearchFilter.properties)).not.toContain('workspaceId');
+    expect(doc.components.schemas.SearchRequest.properties.workspaceId['x-roles']).toEqual(['context-reader']);
+  });
+
+  it('every context-reader route documents actorId and workspaceId, and only those routes do', () => {
+    for (const { method, path, op } of operations) {
+      const names = (op.parameters ?? []).map(resolveRef).filter((p: any) => p['x-roles']).map((p: any) => p.name);
+      if (CONTEXT_READER_ROUTES.has(routeKey(method, path)) && method !== 'post') expect(names, path).toEqual(expect.arrayContaining(['actorId', 'workspaceId']));
+      else expect(names, path).toEqual([]);
+    }
   });
 });
 
@@ -116,13 +143,22 @@ describe('request schemas match the validation code', () => {
   it('POST /v1/memories/search: same body fields, required flags and caps as searchBodySchema', () => {
     const schema = doc.components.schemas.SearchRequest;
     const shape = (searchBodySchema as any).shape as Record<string, any>;
-    expect(Object.keys(schema.properties).sort()).toEqual(Object.keys(shape).sort());
+    // actorId and workspaceId are the context-reader role's; the server checks them against the assertion and strips them before this schema.
+    const roleOnly = Object.keys(schema.properties).filter((k) => schema.properties[k]['x-roles']);
+    expect(roleOnly.sort()).toEqual(['actorId', 'workspaceId']);
+    expect(Object.keys(schema.properties).filter((k) => !roleOnly.includes(k)).sort()).toEqual(Object.keys(shape).sort());
     expect(schema.required.sort()).toEqual(Object.keys(shape).filter((k) => !shape[k].isOptional()).sort());
     expect(schema.additionalProperties).toBe(false);
     expect(schema.properties.query.maxLength).toBe(API_LIMITS.search.maxQueryChars);
     expect(schema.properties.limit.maximum).toBe(API_LIMITS.search.maxLimit);
     expect(schema.properties.tokenBudget.maximum).toBe(API_LIMITS.search.maxTokenBudget);
     const ok = { query: 'x' };
+    expect(schema.properties.limit['x-context-reader']).toEqual({ default: API_LIMITS.contextReader.defaultLimit, maximum: API_LIMITS.contextReader.maxLimit });
+    expect(schema.properties.tokenBudget['x-context-reader']).toEqual({ maximum: API_LIMITS.contextReader.maxTokenBudget });
+    expect(schema.properties.minScore).toMatchObject({ minimum: 0, maximum: 1 });
+    expect(searchBodySchema.safeParse({ ...ok, minScore: 1 }).success).toBe(true);
+    expect(searchBodySchema.safeParse({ ...ok, minScore: 1.1 }).success).toBe(false);
+    expect(searchBodySchema.safeParse({ ...ok, actorId: 'x' }).success).toBe(false);
     expect(searchBodySchema.safeParse({ ...ok, limit: schema.properties.limit.maximum }).success).toBe(true);
     expect(searchBodySchema.safeParse({ ...ok, limit: schema.properties.limit.maximum + 1 }).success).toBe(false);
     expect(searchBodySchema.safeParse({ query: 'x'.repeat(schema.properties.query.maxLength + 1) }).success).toBe(false);
@@ -135,6 +171,12 @@ describe('request schemas match the validation code', () => {
     expect(doc.components.schemas.SearchFilter.additionalProperties).toBe(false);
     expect(props.categories.maxItems).toBe(MEMORY_CATEGORIES.length);
     expect(props.statuses.maxItems).toBe(MEMORY_STATUSES.length);
+    expect(props.kinds.maxItems).toBe(MEMORY_CATEGORIES.length);
+    expect(props.tags.maxItems).toBe(API_LIMITS.search.maxTags);
+    expect(props.tags.items.maxLength).toBe(API_LIMITS.search.maxTagChars);
+    expect(filterBodySchema.safeParse({ tags: ['approval.rejected'] }).success).toBe(true);
+    expect(filterBodySchema.safeParse({ tags: ['has space'] }).success).toBe(false);
+    expect(filterBodySchema.safeParse({ tags: Array.from({ length: API_LIMITS.search.maxTags + 1 }, (_, i) => `t${i}`) }).success).toBe(false);
   });
 
   it('enumerations in the document are the ones the code accepts', () => {

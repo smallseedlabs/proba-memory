@@ -1,0 +1,25 @@
+{
+  "description": "actorId and workspaceId must equal the assertion's.",
+  "request": {
+    "method": "POST",
+    "path": "/v1/memories/search",
+    "body": {
+      "query": "discount banner",
+      "actorId": "660e8400-e29b-41d4-a716-446655440009",
+      "workspaceId": "seedbed"
+    },
+    "headers": {
+      "Authorization": "Bearer <service token>",
+      "X-Act-As": "<act-as assertion>",
+      "Content-Type": "application/json"
+    }
+  },
+  "response": {
+    "status": 403,
+    "body": {
+      "error": "act_as_mismatch",
+      "message": "actorId and workspaceId must match the X-Act-As assertion.",
+      "traceId": "00000000-0000-4000-8000-000000000000"
+    }
+  }
+}

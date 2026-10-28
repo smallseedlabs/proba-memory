@@ -5,3 +5,4 @@ export * from './resolver.js';
 export * from './pipeline.js';
 export * from './outcomes.js';
 export * from './memory-audit.js';
+export * from './ownership.js';

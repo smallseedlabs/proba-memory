@@ -1,0 +1,22 @@
+{
+  "description": "actorId and workspaceId are required (in the body for the search, in the query for the reads).",
+  "request": {
+    "method": "GET",
+    "path": "/v1/memories/aa0e8400-e29b-41d4-a716-000000000001",
+    "query": {
+      "actorId": "660e8400-e29b-41d4-a716-446655440001"
+    },
+    "headers": {
+      "Authorization": "Bearer <service token>",
+      "X-Act-As": "<act-as assertion>"
+    }
+  },
+  "response": {
+    "status": 400,
+    "body": {
+      "error": "act_as_scope_required",
+      "message": "actorId and workspaceId are required.",
+      "traceId": "00000000-0000-4000-8000-000000000000"
+    }
+  }
+}

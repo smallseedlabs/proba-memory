@@ -1,0 +1,31 @@
+{
+  "description": "The scoring profiles of the workspace, without their configuration.",
+  "request": {
+    "method": "GET",
+    "path": "/v1/profiles",
+    "query": {
+      "actorId": "660e8400-e29b-41d4-a716-446655440001",
+      "workspaceId": "seedbed"
+    },
+    "headers": {
+      "Authorization": "Bearer <service token>",
+      "X-Act-As": "<act-as assertion>"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "profiles": [
+        {
+          "name": "default",
+          "version": 1,
+          "status": "active",
+          "scope": "global",
+          "canaryPercent": 0,
+          "description": "Built-in default scoring profile",
+          "createdAt": "2026-10-26T12:00:00.000Z"
+        }
+      ]
+    }
+  }
+}
