@@ -1,0 +1,23 @@
+{
+  "description": "A memory of another user is answered as if it did not exist.",
+  "request": {
+    "method": "GET",
+    "path": "/v1/memories/aa0e8400-e29b-41d4-a716-000000000003",
+    "query": {
+      "actorId": "660e8400-e29b-41d4-a716-446655440001",
+      "workspaceId": "seedbed"
+    },
+    "headers": {
+      "Authorization": "Bearer <service token>",
+      "X-Act-As": "<act-as assertion>"
+    }
+  },
+  "response": {
+    "status": 404,
+    "body": {
+      "error": "not_found",
+      "message": "There is no memory with this id.",
+      "traceId": "00000000-0000-4000-8000-000000000000"
+    }
+  }
+}

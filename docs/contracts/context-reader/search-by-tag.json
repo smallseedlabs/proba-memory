@@ -1,0 +1,72 @@
+{
+  "description": "The same search narrowed to the memories learned from a rejection.",
+  "request": {
+    "method": "POST",
+    "path": "/v1/memories/search",
+    "body": {
+      "query": "discount banner countdown timer",
+      "filter": {
+        "tags": [
+          "approval.rejected"
+        ]
+      },
+      "actorId": "660e8400-e29b-41d4-a716-446655440001",
+      "workspaceId": "seedbed"
+    },
+    "headers": {
+      "Authorization": "Bearer <service token>",
+      "X-Act-As": "<act-as assertion>",
+      "Content-Type": "application/json"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "retrievalId": "00000000-0000-4000-8000-000000000003",
+      "traceId": "00000000-0000-4000-8000-000000000000",
+      "query": {
+        "length": 31
+      },
+      "profile": {
+        "name": "default",
+        "version": 1,
+        "status": "active",
+        "served": "active"
+      },
+      "results": [
+        {
+          "id": "aa0e8400-e29b-41d4-a716-000000000001",
+          "category": "semantic",
+          "content": "The user rejected the discount banner with a countdown timer because it feels pushy.",
+          "summary": "Rejects pushy countdown banners",
+          "score": 0.915,
+          "importance": 0.9,
+          "confidence": 0.8,
+          "usefulness": 0.5,
+          "createdAt": "2026-10-26T12:00:00.000Z",
+          "lastReinforcedAt": "2026-10-26T12:00:00.000Z",
+          "sourceRefs": [
+            {
+              "kind": "audit",
+              "ref": "audit:bb0e8400-e29b-41d4-a716-000000000001"
+            }
+          ],
+          "trust": "untrusted_data",
+          "tokens": 25,
+          "truncated": false
+        }
+      ],
+      "stats": {
+        "vectorCandidates": 1,
+        "textCandidates": 1,
+        "fused": 1,
+        "scored": 1,
+        "returned": 1,
+        "tokensUsed": 25,
+        "tokenBudget": 1500,
+        "degraded": [],
+        "durationMs": 14
+      }
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "description": "One of the user's memories with its links. A link to a memory the user may not read is left out.",
+  "request": {
+    "method": "GET",
+    "path": "/v1/memories/aa0e8400-e29b-41d4-a716-000000000001",
+    "query": {
+      "actorId": "660e8400-e29b-41d4-a716-446655440001",
+      "workspaceId": "seedbed"
+    },
+    "headers": {
+      "Authorization": "Bearer <service token>",
+      "X-Act-As": "<act-as assertion>"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "memory": {
+        "id": "aa0e8400-e29b-41d4-a716-000000000001",
+        "category": "semantic",
+        "content": "The user rejected the discount banner with a countdown timer because it feels pushy.",
+        "summary": "Rejects pushy countdown banners",
+        "status": "active",
+        "importance": 0.9,
+        "confidence": 0.8,
+        "usefulness": 0.5,
+        "supersedesId": null,
+        "validFrom": "2026-10-26T12:00:00.000Z",
+        "validTo": null,
+        "lastReinforcedAt": "2026-10-26T12:00:00.000Z",
+        "lastAccessedAt": "2026-10-26T12:00:00.000Z",
+        "accessCount": 2,
+        "evidenceCount": 1,
+        "goalId": "770e8400-e29b-41d4-a716-446655440002",
+        "threadId": "880e8400-e29b-41d4-a716-446655440003",
+        "sourceRefs": [
+          {
+            "kind": "audit",
+            "ref": "audit:bb0e8400-e29b-41d4-a716-000000000001"
+          }
+        ],
+        "embedding": {
+          "model": "local-hash",
+          "version": "1"
+        },
+        "provenance": {
+          "stance": "negative",
+          "signals": [
+            "approval.rejected"
+          ],
+          "createdBy": "extractor",
+          "extractor": null
+        },
+        "createdAt": "2026-10-26T12:00:00.000Z",
+        "updatedAt": "2026-10-26T12:00:00.000Z",
+        "trust": "untrusted_data"
+      },
+      "links": [
+        {
+          "fromId": "aa0e8400-e29b-41d4-a716-000000000001",
+          "toId": "aa0e8400-e29b-41d4-a716-000000000002",
+          "relation": "supports",
+          "weight": 0.7,
+          "createdAt": "2026-10-26T12:00:00.000Z"
+        }
+      ]
+    }
+  }
+}
