@@ -28,7 +28,7 @@ describe('the shipped seed', () => {
     const seed = loadSelfSeedFile(DEFAULT_SELF_SEED_FILE);
     const text = seed.entries.map((e) => e.content).join('\n');
     expect(text).toMatch(/Small Seed Labs/);
-    expect(text).toMatch(/concrete proposal/);
+    expect(text).toMatch(/what would unblock it/);
     for (const limb of ['research.gather', 'page.attach_user_page', 'ads.create_campaign', 'ads.pause_campaign', 'ads.resume_campaign']) expect(text).toContain(limb);
     expect(text).toMatch(/ADS_MAX_DAILY_BUDGET/);
     // No secrets or credentials in a public seed.
