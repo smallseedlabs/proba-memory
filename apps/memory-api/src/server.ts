@@ -9,6 +9,7 @@ import {
   TokenVerificationError,
   listSelfMemories,
   selfMemoryKey,
+  selfMemoryMeta,
   type AppConfig,
   type AuditEmitter,
   type Clock,
@@ -538,12 +539,27 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
         const memories = await listSelfMemories(deps.store);
         await deps.retrieval.recordRead(contextOf(request, session), 'self', { count: memories.length }, memories.map((m) => m.id));
         const versions = [...new Set(memories.map((m) => selfMemoryKey(m)?.version).filter((v): v is string => Boolean(v)))];
+        const views = memories.map((m) => {
+          const ref = selfMemoryKey(m)!;
+          const meta = selfMemoryMeta(m);
+          return {
+            id: m.id,
+            key: ref.key,
+            version: ref.version,
+            title: m.summary ?? ref.key,
+            content: m.content,
+            category: m.category,
+            tier: meta.tier,
+            tags: meta.tags,
+            validFrom: m.validFrom,
+          };
+        });
+        // The core: the one always-on entry, authored per version and stored with it (never generated per request).
+        const core = views.find((v) => v.tier === 'core');
         return {
           version: versions.length === 1 ? versions[0] : null,
-          memories: memories.map((m) => {
-            const ref = selfMemoryKey(m)!;
-            return { id: m.id, key: ref.key, version: ref.version, title: m.summary ?? ref.key, content: m.content, category: m.category, validFrom: m.validFrom };
-          }),
+          core: core ? { id: core.id, key: core.key, version: core.version, content: core.content } : null,
+          memories: views,
         };
       });
 

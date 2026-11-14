@@ -13,6 +13,7 @@ import {
   parseSelfSeed,
   seedSelfMemory,
   selfMemoryId,
+  selfMemoryMeta,
   type SelfSeed,
 } from '@smallseedlabs/proba-memory-core';
 import { ManualClock } from './clock-ids.js';
@@ -86,6 +87,31 @@ describe('bootstrap self memory: seeding', () => {
     expect(() => seed('v1', [['01-a', 'x'], ['01-a', 'y']])).toThrow(/unique/);
     expect(() => seed('v1', [['Identity', 'x']])).toThrow(SelfSeedError);
     expect(() => parseSelfSeed({ schema: 'proba.self-memory/v1', version: 'v1', entries: [{ key: '01-a', title: 't', category: 'semantic', content: 'x', extra: 1 }] })).toThrow(SelfSeedError);
+  });
+
+  it('v2: stores tier and tags with the version, needs exactly one small core, and treats a tag change as a conflict', async () => {
+    const v2 = (version: string, coreText: string, tags: string[]) =>
+      parseSelfSeed({
+        schema: 'proba.self-memory/v2',
+        version,
+        entries: [
+          { key: '00-core', title: 'Core', category: 'procedural', tier: 'core', content: coreText },
+          { key: '10-research', title: 'Research', category: 'semantic', tier: 'detail', tags, content: 'research.gather needs a landing page.' },
+        ],
+      });
+    const store = new InMemoryMemoryStore();
+    const clock = new ManualClock('2026-11-14T00:00:00.000Z');
+    await seedSelfMemory(store, v2('v3', 'I am Proba.', ['tool:research.gather', 'need:landing_url']), { clock });
+    const [core, detail] = await listSelfMemories(store);
+    expect(selfMemoryMeta(core)).toEqual({ tier: 'core', tags: [] });
+    expect(selfMemoryMeta(detail)).toEqual({ tier: 'detail', tags: ['tool:research.gather', 'need:landing_url'] });
+    const again = await seedSelfMemory(store, v2('v3', 'I am Proba.', ['tool:research.gather']), { clock });
+    expect(again.conflicts).toEqual(['10-research']);
+    expect(() =>
+      parseSelfSeed({ schema: 'proba.self-memory/v2', version: 'x', entries: [{ key: '10-a', title: 't', category: 'semantic', content: 'x' }] })
+    ).toThrow(/exactly one core/);
+    expect(() => v2('x', 'y'.repeat(1201), [])).toThrow(/at most 1200/);
+    expect(() => v2('x', 'ok', ['Tool:Bad'])).toThrow(SelfSeedError);
   });
 
   it('names the reserved workspace', () => {

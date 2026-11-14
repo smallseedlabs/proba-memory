@@ -31,9 +31,19 @@ const keySchema = z
   .string()
   .regex(/^[0-9]{2}-[a-z0-9-]{1,60}$/, 'key is a two-digit order prefix and a lower-case slug, for example 01-identity');
 
+/** Tags say when a detail entry is relevant: step:<stepType>, tool:<verb>, need:<input>, goal:<state>, topic:<word>. */
+const tagSchema = z.string().regex(/^(step|tool|need|goal|topic):[a-z0-9_.-]{1,60}$/, 'tag is step:|tool:|need:|goal:|topic: followed by a lower-case name');
+
+/** The always-on core must stay small: it is in every prompt. ~300 tokens at ~4 characters per token. */
+export const SELF_CORE_MAX_CHARS = 1200;
+
+export const SELF_TIERS = ['core', 'detail'] as const;
+export type SelfTier = (typeof SELF_TIERS)[number];
+
 export const selfSeedSchema = z
   .object({
-    schema: z.literal('proba.self-memory/v1'),
+    /** v1: flat entries (all `detail`). v2: one `core` entry (always on) plus tagged `detail` entries. */
+    schema: z.enum(['proba.self-memory/v1', 'proba.self-memory/v2']),
     version: z.string().regex(/^[0-9A-Za-z.\-_]{1,64}$/),
     description: z.string().max(2000).optional(),
     entries: z
@@ -43,6 +53,8 @@ export const selfSeedSchema = z
             key: keySchema,
             title: z.string().min(1).max(200),
             category: z.enum(['semantic', 'procedural']),
+            tier: z.enum(SELF_TIERS).default('detail'),
+            tags: z.array(tagSchema).max(20).default([]),
             content: z.string().min(1).max(3500),
           })
           .strict()
@@ -54,10 +66,37 @@ export const selfSeedSchema = z
   .superRefine((seed, ctx) => {
     const keys = seed.entries.map((e) => e.key);
     if (new Set(keys).size !== keys.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'entry keys must be unique', path: ['entries'] });
+    const cores = seed.entries.filter((e) => e.tier === 'core');
+    if (seed.schema === 'proba.self-memory/v2' && cores.length !== 1) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'a v2 seed has exactly one core entry', path: ['entries'] });
+    }
+    for (const core of cores) {
+      if (core.content.length > SELF_CORE_MAX_CHARS) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `the core entry is at most ${SELF_CORE_MAX_CHARS} characters (~300 tokens)`, path: ['entries'] });
+      }
+    }
   });
 
 export type SelfSeed = z.infer<typeof selfSeedSchema>;
 export type SelfSeedEntry = SelfSeed['entries'][number];
+
+const TIER_SIGNAL = 'self.tier:';
+const TAG_SIGNAL = 'self.tag:';
+
+/** Signals stored on a self memory: the self marker, its tier and its tags (the tier and tags live with the version's rows). */
+export function selfSignals(entry: Pick<SelfSeedEntry, 'tier' | 'tags'>): string[] {
+  return [SELF_MEMORY_SIGNAL, `${TIER_SIGNAL}${entry.tier}`, ...entry.tags.map((t) => `${TAG_SIGNAL}${t}`)];
+}
+
+/** Tier and tags of a stored self memory (memories seeded from a v1 file are `detail` with no tags). */
+export function selfMemoryMeta(memory: Pick<Memory, 'provenance'>): { tier: SelfTier; tags: string[] } {
+  const signals = memory.provenance.signals;
+  const tier = signals.find((x) => x.startsWith(TIER_SIGNAL))?.slice(TIER_SIGNAL.length);
+  return {
+    tier: tier === 'core' ? 'core' : 'detail',
+    tags: signals.filter((x) => x.startsWith(TAG_SIGNAL)).map((x) => x.slice(TAG_SIGNAL.length)),
+  };
+}
 
 export class SelfSeedError extends Error {
   constructor(message: string) {
@@ -145,7 +184,7 @@ function toInsert(seed: SelfSeed, entry: SelfSeedEntry, now: string, supersedesI
     ownerActorId: null,
     visibility: 'workspace',
     sourceRefs: [{ kind: 'other', id: entry.key, ref: `self:${seed.version}:${entry.key}` }],
-    provenance: { extractor: null, observationIds: [], stance: 'neutral', signals: [SELF_MEMORY_SIGNAL], createdBy: SELF_MEMORY_CREATED_BY },
+    provenance: { extractor: null, observationIds: [], stance: 'neutral', signals: selfSignals(entry), createdBy: SELF_MEMORY_CREATED_BY },
     createdAt: now,
   };
 }
@@ -166,7 +205,8 @@ export async function seedSelfMemory(store: MemoryStore, seed: SelfSeed, deps: {
       const existing = await tx.getMemory(SYSTEM_WORKSPACE_ID, id);
       if (existing) {
         result.unchanged += 1;
-        if (existing.content !== entry.content || existing.summary !== entry.title) result.conflicts.push(entry.key);
+        const sameSignals = JSON.stringify(existing.provenance.signals) === JSON.stringify(selfSignals(entry));
+        if (existing.content !== entry.content || existing.summary !== entry.title || !sameSignals) result.conflicts.push(entry.key);
         continue;
       }
       const previous = activeByKey.get(entry.key);

@@ -31,6 +31,13 @@ describe('the shipped seed', () => {
     expect(text).toMatch(/what would unblock it/);
     for (const limb of ['research.gather', 'page.attach_user_page', 'ads.create_campaign', 'ads.pause_campaign', 'ads.resume_campaign']) expect(text).toContain(limb);
     expect(text).toMatch(/ADS_MAX_DAILY_BUDGET/);
+    // One always-on core of ~300 tokens or fewer; everything else is tagged detail.
+    expect(seed.schema).toBe('proba.self-memory/v2');
+    const cores = seed.entries.filter((e) => e.tier === 'core');
+    expect(cores).toHaveLength(1);
+    expect(Math.ceil(cores[0].content.length / 4)).toBeLessThanOrEqual(300);
+    expect(cores[0].content).toMatch(/what would unblock it/);
+    for (const e of seed.entries.filter((x) => x.tier === 'detail')) expect(e.tags.length, e.key).toBeGreaterThan(0);
     // No secrets or credentials in a public seed.
     expect(text).not.toMatch(/sk-[A-Za-z0-9]{10,}|BEGIN [A-Z ]*PRIVATE KEY|password\s*[:=]/i);
   });
@@ -56,6 +63,9 @@ describe('GET /v1/self', () => {
     expect(res.body.version).toBe(seed.version);
     expect(res.body.memories.map((m: any) => m.key)).toEqual(seed.entries.map((e) => e.key));
     expect(res.body.memories[0]).toMatchObject({ title: seed.entries[0].title, content: seed.entries[0].content, version: seed.version });
+    expect(res.body.core).toMatchObject({ key: '00-core', version: seed.version, content: seed.entries[0].content });
+    expect(res.body.memories[0].tier).toBe('core');
+    expect(res.body.memories[1]).toMatchObject({ tier: 'detail', tags: seed.entries[1].tags });
   });
 
   it('serves the same entries to the context-reader role in any workspace', async () => {

@@ -234,7 +234,8 @@ paths:
         Who Proba is, how it behaves and what its limbs do: the active entries of the versioned seed `bootstrap/proba-self.json`,
         upserted into the reserved system workspace when memory-api starts. System-owned and the same for every workspace; read-only
         (no route writes it, the write pipeline refuses the system workspace and jobs never run there). Ordered by key.
-        Audited as `memory.retrieved` (operation `self`).
+        `core` is the one always-on entry (authored per seed version, at most ~300 tokens); `detail` entries carry tags
+        (`step:`, `tool:`, `need:`, `goal:`, `topic:`) that context-api matches against the run. Audited as `memory.retrieved` (operation `self`).
       parameters:
         - { $ref: '#/components/parameters/actorId' }
         - { $ref: '#/components/parameters/workspaceId' }
@@ -250,11 +251,20 @@ paths:
                   version:
                     type: [string, 'null']
                     description: The seed version served; null when no self memory is stored.
+                  core:
+                    type: [object, 'null']
+                    description: The always-on core entry of this version; null for a seed without one.
+                    required: [id, key, version, content]
+                    properties:
+                      id: { type: string, format: uuid }
+                      key: { type: string }
+                      version: { type: string }
+                      content: { type: string }
                   memories:
                     type: array
                     items:
                       type: object
-                      required: [id, key, version, title, content, category, validFrom]
+                      required: [id, key, version, title, content, category, tier, tags, validFrom]
                       properties:
                         id: { type: string, format: uuid }
                         key: { type: string }
@@ -262,6 +272,8 @@ paths:
                         title: { type: string }
                         content: { type: string }
                         category: { type: string, enum: [semantic, procedural] }
+                        tier: { type: string, enum: [core, detail] }
+                        tags: { type: array, items: { type: string } }
                         validFrom: { type: string, format: date-time }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
