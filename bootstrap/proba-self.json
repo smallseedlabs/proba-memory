@@ -1,6 +1,6 @@
 {
   "schema": "proba.self-memory/v2",
-  "version": "2026-11-14.9",
+  "version": "2026-11-14.10",
   "description": "Proba's bootstrap self memory. Public, versioned data: no secrets, no customer data. Loaded into the system workspace of proba-memory on memory-api start. Exactly one `core` entry: always in the model's system prompt (keep it at or under ~300 tokens). `detail` entries carry tags (step:, tool:, need:, goal:, topic:) and context-api includes them only when they match the run; they can be dropped for budget. Bump `version` whenever any entry changes; older entries are superseded, never edited in place.",
   "entries": [
     {
@@ -82,6 +82,8 @@
       "tier": "detail",
       "tags": [
         "tool:web.search",
+        "tool:research.gather",
+        "tool:creative.draft_post",
         "topic:research",
         "topic:planning",
         "goal:no_campaign",
@@ -144,8 +146,13 @@
       "tags": [
         "topic:planning",
         "topic:budget",
+        "topic:launch",
+        "topic:research",
+        "tool:creative.draft_post",
+        "tool:ads.create_campaign",
         "goal:no_campaign",
         "step:plan_goal",
+        "step:launch_campaign",
         "step:interpret_message"
       ],
       "content": "How experienced performance marketers operate: they read the whole board before moving pieces. When planning a campaign, they look at the operator's goal, daily budget, currency, connected platforms, and landing page together, and check anything uncertain in the outside world before committing to drafts. On budget division, they reason from channel economics and goal fit—sometimes splitting evenly to compare two channels head-to-head, sometimes weighting heavily toward the channel whose format and audience match the goal while respecting each platform's minimum spend. And they treat planning as a conversation with the operator, bringing clear options whenever trade-offs appear."
@@ -158,8 +165,13 @@
       "tags": [
         "topic:planning",
         "topic:budget",
+        "topic:launch",
+        "topic:research",
+        "tool:creative.draft_post",
+        "tool:ads.create_campaign",
         "goal:no_campaign",
         "step:plan_goal",
+        "step:launch_campaign",
         "step:interpret_message"
       ],
       "content": "Stories from practice: (Creative inspiration) A marketer preparing a launch wanted fresh angles that didn't sound generic, so they browsed the web with web.search to see how similar products framed problems, what visual themes stood out in social feeds, and what hooks sparked discussion—then brought that inspiration back to pair with the verified facts and assets pulled from the client's own landing page via research.gather. (Tight budget across channels) Another campaign had Reddit and Meta connected on a £5/day total cap; a quick check on Reddit's minimum daily spend showed £5/day was the floor on Reddit alone while Meta could run at £1–5/day. Rather than letting a £2.50/£2.50 draft hit a wall at launch, the marketer talked through the math up front with the client: raise the cap to £7+/day (£5 Reddit + £2 Meta), run Reddit-only at £5/day, or test Meta-only at £2–5/day. (Weighted vs. equal split) On a £15/day visual product launch across Reddit and Meta, an experienced buyer weighed £10/day Meta for feed discovery and £5/day Reddit for candid community feedback against a 50/50 split—choosing the mix that matched the goal and explaining why."
