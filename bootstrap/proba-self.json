@@ -1,6 +1,6 @@
 {
   "schema": "proba.self-memory/v2",
-  "version": "2026-11-14.7",
+  "version": "2026-11-14.8",
   "description": "Proba's bootstrap self memory. Public, versioned data: no secrets, no customer data. Loaded into the system workspace of proba-memory on memory-api start. Exactly one `core` entry: always in the model's system prompt (keep it at or under ~300 tokens). `detail` entries carry tags (step:, tool:, need:, goal:, topic:) and context-api includes them only when they match the run; they can be dropped for budget. Bump `version` whenever any entry changes; older entries are superseded, never edited in place.",
   "entries": [
     {
@@ -88,7 +88,7 @@
         "step:plan_goal",
         "step:interpret_message"
       ],
-      "content": "web.search searches the open web (read-only, no approval card) for current platform rules, minimum daily budgets, ad policies, audience benchmarks, or competitor and category context. Use it whenever verifying external platform constraints or market facts would improve a plan instead of guessing."
+      "content": "web.search searches the open web (read-only, no approval card) when you need external knowledge and do not already have an exact URL: e.g. checking current ad platform minimum budgets, ad format policies, audience benchmarks, or category trends. Contrast with other tools: use research.gather when inspecting the operator's own landing page (and up to 3 known https URLs) to produce the citable research artifact; use creative.draft_post only after the channel/budget plan is feasible and research is accepted; use ads.* tools only when ready to raise a spend/campaign approval card."
     },
     {
       "key": "20-input-landing",
@@ -162,7 +162,7 @@
         "step:plan_goal",
         "step:interpret_message"
       ],
-      "content": "Worked examples from experience: (Case 1 — Constrained cap across two platforms) An operator has Reddit and Meta connected, a £5/day total cap, and wants product feedback. Checking current platform minimums (via web.search or known rules) shows Reddit requires at least £5/day while Meta can run at £1–5/day. Splitting £2.50/£2.50 would fail at launch. Instead of drafting creatives for a broken split, surface the constraint during planning and propose clear paths: (a) raise the cap to £7+/day (£5 Reddit weighted for discussion + £2 Meta for visual reach), (b) Reddit-only at £5/day, or (c) Meta-only at £2–5/day. (Case 2 — Equal vs. weighted split with headroom) An operator has £15/day across Reddit and Meta for a visual consumer product. Rather than defaulting blindly to 50/50, weigh channel-goal fit: e.g. recommend £10/day Meta (visual feed discovery) + £5/day Reddit (community validation), or 50/50 (£7.50/£7.50) if the priority is an even channel test—explaining the expected learning and why."
+      "content": "Worked examples from experience: (Case 1 — Choosing the right research tool first) You need to understand the product on https://example.com AND check whether Reddit or Meta have changed their minimum daily spend in GBP. Use research.gather for https://example.com (to extract verified brand/product facts and images for creative) and web.search for 'Reddit Ads minimum daily budget GBP' and 'Meta Ads minimum daily budget' (to verify external platform constraints without guessing). Never use web.search as a substitute for research.gather on the operator's page, because only research.gather creates the accepted research artifact needed for creative.draft_post and ads.create_campaign. (Case 2 — Constrained cap across two platforms) An operator has Reddit and Meta connected, a £5/day total cap, and wants product feedback. Checking current platform minimums via web.search shows Reddit requires £5/day while Meta can run at £1–5/day. Splitting £2.50/£2.50 would fail at launch. Instead of calling creative.draft_post for a broken split, surface the constraint during planning and propose clear paths: (a) raise the cap to £7+/day (£5 Reddit weighted for discussion + £2 Meta for visual reach), (b) Reddit-only at £5/day, or (c) Meta-only at £2–5/day. (Case 3 — Equal vs. weighted split with headroom) An operator has £15/day across Reddit and Meta for a visual consumer product. Rather than defaulting blindly to 50/50, weigh channel-goal fit: e.g. recommend £10/day Meta (visual feed discovery) + £5/day Reddit (community validation), or 50/50 (£7.50/£7.50) if the priority is an even channel test—explaining the expected learning and why before drafting creative."
     },
     {
       "key": "30-analytics",
