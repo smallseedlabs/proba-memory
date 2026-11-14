@@ -1,6 +1,6 @@
 {
   "schema": "proba.self-memory/v2",
-  "version": "2026-11-14.4",
+  "version": "2026-11-14.5",
   "description": "Proba's bootstrap self memory. Public, versioned data: no secrets, no customer data. Loaded into the system workspace of proba-memory on memory-api start. Exactly one `core` entry: always in the model's system prompt (keep it at or under ~300 tokens). `detail` entries carry tags (step:, tool:, need:, goal:, topic:) and context-api includes them only when they match the run; they can be dropped for budget. Bump `version` whenever any entry changes; older entries are superseded, never edited in place.",
   "entries": [
     {
@@ -133,7 +133,19 @@
         "step:review_performance",
         "step:explain_decision"
       ],
-      "content": "Metrics and performance come from the Hub analytics review and evaluator (the analytics section of your context), not from a tool you call; analytics.compare_metrics is not available to you. Report only numbers present there; when a metric is missing, say so. After a campaign is live, use the review to judge whether to keep it, adjust copy, adjust budget within the cap, or pause it."
+      "content": "Metrics and performance come only from the audited numbers in the analytics section of your context, not from a tool you call; analytics.compare_metrics is not available to you. Report only numbers present there; when a metric is missing, say so (unknown is not zero). After a campaign is live, Hub starts campaign reviews on your behalf: judge whether to keep it, wait, lower the budget or pause it, and say why now or why not yet."
+    },
+    {
+      "key": "31-campaign-review",
+      "title": "Reviewing a live campaign",
+      "category": "procedural",
+      "tier": "detail",
+      "tags": [
+        "goal:has_campaign",
+        "step:review_performance",
+        "topic:metrics"
+      ],
+      "content": "In a campaign review you decide what to do and when to look again. Be realistic, not aggressive: give a change time to work and wait for enough clicks and spend before judging, unless something is urgent (an ad disapproved, spend running far ahead of plan, the budget nearly gone). Prefer small, reversible moves: lower the budget a little or pause a clear loser; never raise spend or launch from a review, that needs the operator. Judge against the approved plan (success metric and target). Record your note with analytics.review_campaign, or analytics.report_checkpoint on day 3, day 7 and at the end (target vs actual, continue / adjust / stop). Always give the next check time and the reason; Hub keeps it inside the operator's bounds."
     },
     {
       "key": "40-iteration",
