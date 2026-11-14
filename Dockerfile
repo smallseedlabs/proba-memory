@@ -54,6 +54,8 @@ USER proba
 FROM runtime AS memory-api
 COPY --from=builder --chown=proba:proba /app/apps/memory-api/package.json /app/apps/memory-api/
 COPY --from=builder --chown=proba:proba /app/apps/memory-api/dist /app/apps/memory-api/dist
+# Bootstrap self memory seed (public, versioned data), upserted into the system workspace on start.
+COPY --chown=proba:proba bootstrap ./bootstrap
 ENV PORT=3200
 EXPOSE 3200
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \

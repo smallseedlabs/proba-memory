@@ -1,3 +1,4 @@
+import { isReservedWorkspaceId } from '../bootstrap/self-memory.js';
 import type { AuditDraft, AuditEmitter } from '../ports/audit-emitter.js';
 import type { Clock } from '../ports/clock.js';
 import type { Embedder } from '../ports/embedder.js';
@@ -93,6 +94,12 @@ export class WritePipeline {
       redactions: [],
       extractionAttempts: 0,
     });
+
+    // 0. The system workspace holds Proba's bootstrap self memory: only the seeder writes it, never an observation.
+    if (isReservedWorkspaceId(raw.workspaceId)) {
+      log.warn('observation refused: reserved system workspace', { reason: 'reserved_workspace' });
+      return empty('skipped', 'reserved_workspace');
+    }
 
     // 1. Redact first: nothing unredacted is stored, logged or sent to a model.
     const { observation, redactions } = redactor.redactObservation(raw);

@@ -31,7 +31,7 @@ info:
     - A missing assertion is `400` (`act_as_required`), a missing `actorId` or `workspaceId` is `400` (`act_as_scope_required`),
       an assertion that is expired, badly signed or for another audience is `403` (`act_as_invalid` / `act_as_expired`), and
       parameters that differ from the assertion are `403` (`act_as_mismatch`). An invalid service token is `401`.
-    - Only `POST /v1/memories/search`, `GET /v1/memories/{id}` and `GET /v1/profiles` accept the role; every other route is `403`
+    - Only `POST /v1/memories/search`, `GET /v1/memories/{id}`, `GET /v1/profiles` and `GET /v1/self` accept the role; every other route is `403`
       (`insufficient_role`).
     - It returns only what the user may read: memories they own and memories shared with the whole workspace, in the
       workspace of the assertion. A memory of anybody else is not returned by the search and is `404` by id, exactly like a memory
@@ -217,6 +217,52 @@ paths:
                   profiles:
                     type: array
                     items: { $ref: '#/components/schemas/Profile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /v1/self:
+    get:
+      tags: [Memory]
+      operationId: getSelfMemory
+      summary: Proba's bootstrap self memory
+      security:
+        - firebaseIdToken: []
+        - contextServiceToken: []
+          actAsAssertion: []
+      description: |
+        Who Proba is, how it behaves and what its limbs do: the active entries of the versioned seed `bootstrap/proba-self.json`,
+        upserted into the reserved system workspace when memory-api starts. System-owned and the same for every workspace; read-only
+        (no route writes it, the write pipeline refuses the system workspace and jobs never run there). Ordered by key.
+        Audited as `memory.retrieved` (operation `self`).
+      parameters:
+        - { $ref: '#/components/parameters/actorId' }
+        - { $ref: '#/components/parameters/workspaceId' }
+      responses:
+        '200':
+          description: The self memory.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, memories]
+                properties:
+                  version:
+                    type: [string, 'null']
+                    description: The seed version served; null when no self memory is stored.
+                  memories:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, key, version, title, content, category, validFrom]
+                      properties:
+                        id: { type: string, format: uuid }
+                        key: { type: string }
+                        version: { type: string }
+                        title: { type: string }
+                        content: { type: string }
+                        category: { type: string, enum: [semantic, procedural] }
+                        validFrom: { type: string, format: date-time }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }

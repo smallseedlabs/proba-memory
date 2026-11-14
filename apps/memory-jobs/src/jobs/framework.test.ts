@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadConfig, M2_JOB_NAMES } from '@smallseedlabs/proba-memory-core';
+import { loadConfig, M2_JOB_NAMES, SYSTEM_WORKSPACE_ID } from '@smallseedlabs/proba-memory-core';
 import { createJobs, jobNeeds, JOB_NAMES } from './index.js';
 import { parseArgs } from '../run-job-cli.js';
 import { DAY, HOUR, ago, closeHarnesses, setup, BASE_ENV } from './harness.testing.js';
@@ -148,5 +148,16 @@ describe('CLI arguments', () => {
     expect(parseArgs(['--workspace', '--dry-run']).error).toMatch(/needs a workspace id/);
     expect(parseArgs(['cleanup', '--nope']).error).toMatch(/unknown option/);
     expect(parseArgs(['cleanup', 'promote']).error).toMatch(/unexpected argument/);
+  });
+});
+
+describe('every job: the reserved system workspace', () => {
+  it.each(JOB_NAMES)('%s never runs in the system workspace (bootstrap self memory), even when it is named', async (name) => {
+    const h = await setup();
+    await h.seed('ws', [{ content: 'Prefer short headlines.' }]);
+    await h.seed(SYSTEM_WORKSPACE_ID, [{ content: 'Proba always ends with a proposal.' }]);
+    const runs = await h.runner.runJob(h.job(name), 'manual');
+    expect(runs.map((r) => r.workspaceId)).toEqual(['ws']);
+    expect(await h.runner.runJob(h.job(name), 'manual', { workspaceId: SYSTEM_WORKSPACE_ID })).toEqual([]);
   });
 });

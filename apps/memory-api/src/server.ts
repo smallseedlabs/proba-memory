@@ -7,6 +7,8 @@ import {
   CONTEXT_READER_ROLE,
   RetrievalInputError,
   TokenVerificationError,
+  listSelfMemories,
+  selfMemoryKey,
   type AppConfig,
   type AuditEmitter,
   type Clock,
@@ -526,6 +528,23 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
         const profiles = await deps.profiles.list(session.workspaceId);
         await deps.retrieval.recordRead(contextOf(request, session), 'profiles', { count: profiles.length });
         return { profiles: profiles.map((p) => toProfileView(p, session.role)) };
+      });
+
+      // Proba's bootstrap self memory: system-owned, the same for every workspace, read-only (nothing in this API writes memories,
+      // and the write pipeline and jobs never touch the system workspace). Read from the system workspace, never the caller's.
+      v1.get('/self', async (request) => {
+        const session = need(request);
+        parseWith(noQuerySchema, queryOf(request, session));
+        const memories = await listSelfMemories(deps.store);
+        await deps.retrieval.recordRead(contextOf(request, session), 'self', { count: memories.length }, memories.map((m) => m.id));
+        const versions = [...new Set(memories.map((m) => selfMemoryKey(m)?.version).filter((v): v is string => Boolean(v)))];
+        return {
+          version: versions.length === 1 ? versions[0] : null,
+          memories: memories.map((m) => {
+            const ref = selfMemoryKey(m)!;
+            return { id: m.id, key: ref.key, version: ref.version, title: m.summary ?? ref.key, content: m.content, category: m.category, validFrom: m.validFrom };
+          }),
+        };
       });
 
       v1.get('/retrievals/:id', async (request) => {
