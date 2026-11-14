@@ -15,6 +15,9 @@ const logLevels = ['trace', 'debug', 'info', 'warn', 'error', 'silent'] as const
 const positiveInt = (def: number) => z.coerce.number().int().positive().default(def);
 const nonNegativeInt = (def: number) => z.coerce.number().int().nonnegative().default(def);
 const nonEmpty = (def: string) => z.string().min(1).default(def);
+/** A tenant workspace id: never the reserved system workspace that holds Proba's bootstrap self memory. */
+const tenantWorkspace = (def: string) =>
+  nonEmpty(def).refine((v) => v.trim().toLowerCase() !== '__proba_system__', 'is the reserved system workspace (__proba_system__)');
 const unit = (def: number) => z.coerce.number().min(0).max(1).default(def);
 const bool = (def: 'true' | 'false') =>
   z
@@ -70,7 +73,7 @@ export const envSchema = z.object({
   OUTBOX_RELAY_POLL_MS: positiveInt(500),
   OUTBOX_RELAY_BATCH: positiveInt(100),
   OUTBOX_RELAY_LEASE_MS: positiveInt(30000),
-  AUDIT_WORKSPACE_ID: nonEmpty('seedbed'),
+  AUDIT_WORKSPACE_ID: tenantWorkspace('seedbed'),
 
   // Embedder (OpenAI-compatible HTTP). No vendor is assumed: set base URL and model.
   EMBEDDER_BASE_URL: z.string().default(''),
@@ -106,7 +109,7 @@ export const envSchema = z.object({
   // The development content source refuses production unless this is true.
   ALLOW_DEV_CONTENT_SOURCE: bool('false'),
   DEV_CONTENT_SEED: nonEmpty('proba-dev'),
-  DEV_CONTENT_WORKSPACE_ID: nonEmpty('seedbed'),
+  DEV_CONTENT_WORKSPACE_ID: tenantWorkspace('seedbed'),
   DEV_CONTENT_PAGE_SIZE: positiveInt(20),
   CONTENT_POLL_MS: positiveInt(5000),
   RESOLVER_SIMILARITY_THRESHOLD: unit(0.9),
@@ -168,10 +171,14 @@ export const envSchema = z.object({
   // JSON array of { token, subject, email, emailVerified? }. Only for the `static` verifier, never in production.
   MEMORY_API_STATIC_TOKENS: z.string().default(''),
   // The one workspace this deployment serves. Injected into every call from here, never from the request.
-  MEMORY_API_WORKSPACE_ID: nonEmpty('seedbed'),
+  MEMORY_API_WORKSPACE_ID: tenantWorkspace('seedbed'),
   MEMORY_API_ALLOWED_EMAILS: z.string().default(''),
   MEMORY_API_ALLOWED_EMAIL_DOMAINS: z.string().default(''),
   MEMORY_API_ADMIN_EMAILS: z.string().default(''),
+  // Bootstrap self memory (bootstrap/proba-self.json): upserted into the system workspace on memory-api start, served by GET /v1/self.
+  MEMORY_SELF_SEED_ENABLED: bool('true'),
+  // Path of the seed file; empty means the file shipped with the service (bootstrap/proba-self.json at the repository/image root).
+  MEMORY_SELF_SEED_FILE: z.string().default(''),
   MEMORY_API_CORS_ORIGINS: z.string().default(''),
   MEMORY_API_TRUST_PROXY: bool('false'),
   MEMORY_API_RATE_LIMIT_MAX: positiveInt(120),
@@ -365,6 +372,8 @@ export interface AppConfig {
     rateLimit: { max: number; windowMs: number; searchMax: number; authFailureMax: number; authFailureWindowMs: number };
     /** The `context-reader` service role. `enabled` implies both key files are set. */
     contextReader: { enabled: boolean; serviceKeyFile: string; assertionKeyFile: string };
+    /** Bootstrap self memory seeding on start. `file` empty = the seed shipped with the service. */
+    selfSeed: { enabled: boolean; file: string };
   };
 }
 
@@ -600,6 +609,7 @@ export function loadConfig(env: EnvSource = process.env, options: LoadConfigOpti
         authFailureWindowMs: e.MEMORY_API_AUTH_FAILURE_WINDOW_MS,
       },
       contextReader,
+      selfSeed: { enabled: e.MEMORY_SELF_SEED_ENABLED, file: e.MEMORY_SELF_SEED_FILE.trim() },
     },
   };
 }

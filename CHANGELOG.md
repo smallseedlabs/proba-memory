@@ -5,6 +5,14 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Bootstrap self memory:** `bootstrap/proba-self.json` (versioned, public data) describes who Proba is, what success means, right and
+  wrong behaviour, and its limbs. memory-api upserts it on start into the reserved system workspace `__proba_system__` (idempotent,
+  keyed by version; a new version supersedes the old rows, dropped entries are tombstoned) and serves it read-only at `GET /v1/self`
+  (also to the `context-reader` role). The write pipeline refuses observations for the system workspace, jobs never run there, and
+  the reserved id cannot be configured as a tenant workspace. `MEMORY_SELF_SEED_ENABLED` (default `true`), `MEMORY_SELF_SEED_FILE`.
+
 ### Security
 
 - **Production guard for in-memory adapters:** with `NODE_ENV=production`, selecting any in-memory adapter (`MEMORY_STORE`,

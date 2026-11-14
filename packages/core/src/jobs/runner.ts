@@ -1,3 +1,4 @@
+import { isReservedWorkspaceId } from '../bootstrap/self-memory.js';
 import type { AuditEmitter } from '../ports/audit-emitter.js';
 import type { Clock } from '../ports/clock.js';
 import type { IdGenerator } from '../ports/id-generator.js';
@@ -42,7 +43,8 @@ export class JobRunner {
   async runJob(job: Job, trigger: JobTrigger, options: JobRunOptions = {}): Promise<JobRun[]> {
     const { store, logger } = this.deps;
     const dryRun = options.dryRun ?? this.deps.dryRun ?? false;
-    const known = await store.listWorkspaceIds();
+    // The system workspace (bootstrap self memory) is seeded data: decay, consolidation, cleanup and the rest never touch it.
+    const known = (await store.listWorkspaceIds()).filter((id) => !isReservedWorkspaceId(id));
     // A named workspace only runs when it exists: the filter can never reach beyond the workspaces the store knows.
     const workspaceIds = options.workspaceId === undefined ? known : known.filter((id) => id === options.workspaceId);
     logger.info('job cycle started', { job: job.name, trigger, dryRun, workspaces: workspaceIds.length });

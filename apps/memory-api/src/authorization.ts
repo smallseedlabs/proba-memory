@@ -26,10 +26,10 @@ export interface Session {
 
 /**
  * The routes the `context-reader` role may call: search, one memory by id and the scoring profiles, all limited to what the user may
- * read. Keys are `METHOD route-pattern` as Fastify reports them. Everything else (listing, retrieval logs, job runs, the session)
+ * read, plus Proba's bootstrap self memory (`GET /v1/self`: system-owned, public, the same for everybody, read-only). Keys are `METHOD route-pattern` as Fastify reports them. Everything else (listing, retrieval logs, job runs, the session)
  * answers 403 to this role.
  */
-export const CONTEXT_READER_ROUTES: ReadonlySet<string> = new Set(['POST /v1/memories/search', 'GET /v1/memories/:id', 'GET /v1/profiles']);
+export const CONTEXT_READER_ROUTES: ReadonlySet<string> = new Set(['POST /v1/memories/search', 'GET /v1/memories/:id', 'GET /v1/profiles', 'GET /v1/self']);
 
 export function sessionFromAssertion(assertion: ActAsAssertionClaims, tokenJti: string): Session {
   return {

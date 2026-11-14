@@ -5,6 +5,7 @@ import {
   redactConfig,
 } from '@smallseedlabs/proba-memory-core';
 import { createContextBridgeAuth, createRetrievalService, createRuntime } from '@smallseedlabs/proba-memory-adapters';
+import { bootstrapSelfMemory } from './self-seed.js';
 import { buildServer } from './server.js';
 
 /**
@@ -51,6 +52,7 @@ async function main(): Promise<void> {
     logger.error('the database is not ready: apply the migrations first (npm run migrate, or the migrate container)', { lifecycle: 'schema_missing', err });
     throw err;
   }
+  await bootstrapSelfMemory({ config, store: runtime.store, clock: runtime.clock, logger });
   const relay = runtime.createRelay();
   relay?.start();
 

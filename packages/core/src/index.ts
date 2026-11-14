@@ -14,3 +14,4 @@ export * from './util/index.js';
 export * from './write/index.js';
 export * from './retrieval/index.js';
 export * from './jobs/index.js';
+export * from './bootstrap/self-memory.js';
