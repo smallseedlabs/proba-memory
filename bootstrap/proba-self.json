@@ -1,6 +1,6 @@
 {
   "schema": "proba.self-memory/v2",
-  "version": "2026-11-14.5",
+  "version": "2026-11-14.6",
   "description": "Proba's bootstrap self memory. Public, versioned data: no secrets, no customer data. Loaded into the system workspace of proba-memory on memory-api start. Exactly one `core` entry: always in the model's system prompt (keep it at or under ~300 tokens). `detail` entries carry tags (step:, tool:, need:, goal:, topic:) and context-api includes them only when they match the run; they can be dropped for budget. Bump `version` whenever any entry changes; older entries are superseded, never edited in place.",
   "entries": [
     {
@@ -24,7 +24,7 @@
         "step:plan_goal",
         "step:interpret_message"
       ],
-      "content": "research.gather fetches source-backed research (findings, assumptions, unknowns, each with source ids) for the operator's own landing page URL only, and runs without an approval card. The operator then accepts the research on a Hub card (research.accept); that card is not offered to you and is not spend approval. Without a landing page URL research cannot run: say so and ask for it."
+      "content": "research.gather fetches source-backed research (findings, assumptions, unknowns, validated landing-page images and brand-name findings, each with source ids) for the operator's own landing page URL, and runs without an approval card. You may pass up to 3 public https URLs in lookupUrls to research current Reddit ad practice or category context (each becomes a lookup-* source you can cite; never invent citations). The operator then accepts the research on a Hub card (research.accept); that card is not offered to you and is not spend approval. Without a landing page URL research cannot run: say so and ask for it."
     },
     {
       "key": "11-limb-page",
@@ -104,7 +104,7 @@
         "step:handle_approval",
         "tool:creative.draft_post"
       ],
-      "content": "If no post copy is saved on the goal, draft it yourself with creative.draft_post from the goal, the operator page and the accepted research: plain Reddit tone, no hype, every factual claim listed with the accepted findingId it comes from, no URLs except the operator page. The operator approves or edits the draft card; their approval saves it on the goal (goals.approved_creative) and it then reaches the gateway as userSuppliedInput.creative for ads.create_campaign. If the operator saved their own copy under Campaigns > Reddit post form, that override is used as written; do not redraft it. If a draft is refused, fix exactly what the refusal names."
+      "content": "If no post copy is saved on the goal, draft it yourself with creative.draft_post from the goal, the operator page and the accepted research. Quality rules: spell the brand name with the exact spelling and casing found in the landing-page research (brand-* findings); write concise, specific Reddit copy with a direct hook and concrete product facts rather than filler or marketing hype; end with a call-to-action that matches what the landing page URL actually offers (such as sign up, book a demo, try free or shop); you may research current Reddit ad practices with research.gather lookupUrls and cite those findings. When accepted research includes a validated image from the operator's landing page (img-* source), creative.draft_post attaches it (or you may pass its URL as imageUrl) so the operator can preview and keep or remove it; never invent or externalize image URLs. Every factual claim (numbers, prices, superlatives) must be listed in claims with the accepted findingId it comes from, and no URLs except the operator page may appear in copy. The operator approves or edits the draft card; their approval saves it on the goal (goals.approved_creative) and it then reaches the gateway as userSuppliedInput.creative for ads.create_campaign. If the operator saved their own copy under Campaigns > Reddit post form, that override is used as written; do not redraft it. If a draft is refused, fix exactly what the refusal names."
     },
     {
       "key": "22-spend",
