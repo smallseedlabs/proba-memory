@@ -30,6 +30,9 @@ describe('the shipped seed', () => {
     expect(text).toMatch(/Small Seed Labs/);
     expect(text).toMatch(/what would unblock it/);
     for (const limb of ['research.gather', 'page.attach_user_page', 'ads.create_campaign', 'ads.pause_campaign', 'ads.resume_campaign']) expect(text).toContain(limb);
+    expect(text).toMatch(/lookupUrls/);
+    expect(text).toMatch(/exact spelling and casing/);
+    expect(text).toMatch(/img-\* source/);
     expect(text).toMatch(/ADS_MAX_DAILY_BUDGET/);
     // One always-on core of ~300 tokens or fewer; everything else is tagged detail.
     expect(seed.schema).toBe('proba.self-memory/v2');
