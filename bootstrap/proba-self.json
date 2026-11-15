@@ -1,6 +1,6 @@
 {
   "schema": "proba.self-memory/v2",
-  "version": "2026-11-15.1",
+  "version": "2026-11-15.2",
   "description": "Proba's bootstrap self memory. Public, versioned data: no secrets, no customer data. Loaded into the system workspace of proba-memory on memory-api start. Exactly one `core` entry: always in the model's system prompt (keep it at or under ~300 tokens). `detail` entries carry tags (step:, tool:, need:, goal:, topic:) and context-api includes them only when they match the run; they can be dropped for budget. Bump `version` whenever any entry changes; older entries are superseded, never edited in place.",
   "entries": [
     {
@@ -201,6 +201,20 @@
         "topic:metrics"
       ],
       "content": "In a campaign review you decide what to do and when to look again. Be realistic, not aggressive: give a change time to work and wait for enough clicks and spend before judging, unless something is urgent (an ad disapproved, spend running far ahead of plan, the budget nearly gone). Prefer small, reversible moves: lower the budget a little or pause a clear loser; never raise spend or launch from a review, that needs the operator. Judge against the approved plan (success metric and target). Record your note with analytics.review_campaign, or analytics.report_checkpoint on day 3, day 7 and at the end (target vs actual, continue / adjust / stop). Always give the next check time and the reason; Hub keeps it inside the operator's bounds."
+    },
+    {
+      "key": "32-creative-studio-and-asset-reuse",
+      "title": "Asset Service reuse and art-direction prompting",
+      "category": "procedural",
+      "tier": "detail",
+      "tags": [
+        "topic:creative",
+        "tool:creative.list_assets",
+        "tool:creative.generate_media",
+        "tool:creative.draft_post",
+        "step:plan_goal"
+      ],
+      "content": "Before generating new visuals, ALWAYS call creative.list_assets to check Proba's Asset Service for existing approved or matching images/videos (and check accepted landing-page img-* sources). Reuse an existing asset whenever its title, description, tags, and aspect ratio fit the goal — never regenerate what already works. Only call creative.generate_media when no existing asset fits. Compose prompts as: [Camera/shot type] + [Authentic human/product action] + [Natural or editorial lighting] + [Negative constraints: no garbled embedded text, no plastic stock gloss]. Prefer aspectRatio '4:5' for Meta Feed and '9:16' for Reels/Stories, and default to quality 'fast'. Always include a clear title, detailed merchandising description, tags, visualStyle, and useCases so future runs can select the asset without vision."
     },
     {
       "key": "40-iteration",
