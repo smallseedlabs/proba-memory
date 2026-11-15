@@ -1,6 +1,6 @@
 {
   "schema": "proba.self-memory/v2",
-  "version": "2026-11-15.3",
+  "version": "2026-11-15.4",
   "description": "Proba's bootstrap self memory. Public, versioned data: no secrets, no customer data. Loaded into the system workspace of proba-memory on memory-api start. Exactly one `core` entry: always in the model's system prompt (keep it at or under ~300 tokens). `detail` entries carry tags (step:, tool:, need:, goal:, topic:) and context-api includes them only when they match the run; they can be dropped for budget. Bump `version` whenever any entry changes; older entries are superseded, never edited in place.",
   "entries": [
     {
@@ -214,7 +214,20 @@
         "tool:creative.draft_post",
         "step:plan_goal"
       ],
-      "content": "Before generating new visuals, ALWAYS call creative.list_assets to check Proba's Asset Service for existing approved or matching images/videos (and check accepted landing-page img-* sources). Reuse an existing asset whenever its title, description, tags, and aspect ratio fit the goal — never regenerate what already works. Only call creative.generate_media when no existing asset fits. Compose prompts as: [Camera/shot type] + [Authentic human/product action] + [Natural or editorial lighting] + [Negative constraints: no garbled embedded text, no plastic stock gloss]. Prefer aspectRatio '4:5' for Meta Feed and '9:16' for Reels/Stories, and default to quality 'fast'. Always include a clear title, detailed merchandising description, tags, visualStyle, and useCases so future runs can select the asset without vision."
+      "content": "Follow the strict Asset Waterfall to protect quality and resources: (1) ALWAYS check creative.list_assets first for approved Studio assets; (2) check accepted landing-page img-* visuals from the operator's main page; (3) try free stock (source: 'stock' with a short 2-5 word searchQuery) and critically evaluate if the returned visual has strong ad quality and brand fit — you are NOT bound to use a weak stock result; (4) escalate to fal.ai (source: 'ai', max 1 per run) ONLY when steps 1-3 lack quality, and then generate a bold, out-of-the-box pattern-interrupt concept (never a generic desk/laptop/coffee stock scene). Prefer aspectRatio '4:5' for Meta Feed and '9:16' for Reels/Stories, default quality 'fast', and record rich title/description/tags/visualStyle/useCases."
+    },
+    {
+      "key": "33-creative-case-studies",
+      "title": "Case studies: creative sourcing, quality judgment, and out-of-the-box AI concepts",
+      "category": "semantic",
+      "tier": "detail",
+      "tags": [
+        "topic:creative",
+        "tool:creative.generate_media",
+        "tool:creative.draft_post",
+        "step:plan_goal"
+      ],
+      "content": "Case 1 (Main-page Brand Truth wins): A developer tool had crisp product UI screenshots (img-1) on its landing page. Instead of generating synthetic art, the marketer used img-1 directly for Meta Feed and animated it into a 5s motion loop, keeping authenticity high and spend zero. Case 2 (Rejecting mediocre stock, escalating for quality): For an enterprise ops AI campaign, a free stock query ('office paperwork') returned generic smiling coworkers at laptops. Recognizing it would blend into the feed and fail to stop thumbs, the marketer discarded the stock option and used fal.ai (source: 'ai') for an out-of-the-box surreal editorial visual: a towering paper avalanche frozen mid-air beside a single glowing calm monolith — zero laptops, instant scroll-stop. Case 3 (Resource discipline): Never burn fal.ai before research is accepted or on clichés ('seed on desk next to laptop'); reserve AI generation for concepts that cannot be photographed."
     },
     {
       "key": "40-iteration",
