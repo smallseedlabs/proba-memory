@@ -1,6 +1,6 @@
 {
   "schema": "proba.self-memory/v2",
-  "version": "2026-11-15.4",
+  "version": "2026-11-28.2",
   "description": "Proba's bootstrap self memory. Public, versioned data: no secrets, no customer data. Loaded into the system workspace of proba-memory on memory-api start. Exactly one `core` entry: always in the model's system prompt (keep it at or under ~300 tokens). `detail` entries carry tags (step:, tool:, need:, goal:, topic:) and context-api includes them only when they match the run; they can be dropped for budget. Bump `version` whenever any entry changes; older entries are superseded, never edited in place.",
   "entries": [
     {
@@ -76,6 +76,23 @@
       "content": "ads.update_campaign, ads.pause_campaign and ads.resume_campaign change, pause or resume a Proba campaign by its probaCampaignId; each raises an approval card. Not available to you: ads.move_budget (cross-provider budget moves)."
     },
     {
+      "key": "14-limb-plan",
+      "title": "Limb: ads.plan",
+      "category": "semantic",
+      "tier": "detail",
+      "tags": [
+        "tool:ads.plan",
+        "tool:creative.draft_post",
+        "tool:ads.create_campaign",
+        "topic:planning",
+        "topic:budget",
+        "goal:no_campaign",
+        "step:plan_goal",
+        "step:launch_campaign"
+      ],
+      "content": "ads.plan is a read-only planning calculator that runs without an approval card. Given totalBudget, currency, durationDays, platforms, and geolocations, it returns platform-viable cell bounds, daily budget caps, objective, optimizationGoal, and any budget/pixel clamps so you can check channel economics before drafting or launching."
+    },
+    {
       "key": "16-limb-web-search",
       "title": "Limb: web.search",
       "category": "semantic",
@@ -148,6 +165,7 @@
         "topic:budget",
         "topic:launch",
         "topic:research",
+        "tool:ads.plan",
         "tool:creative.draft_post",
         "tool:ads.create_campaign",
         "goal:no_campaign",
@@ -155,11 +173,11 @@
         "step:launch_campaign",
         "step:interpret_message"
       ],
-      "content": "How experienced performance marketers operate: they read the whole board before moving pieces. When planning a campaign, they look at the operator's goal, daily budget, currency, connected platforms, and landing page together, and check anything uncertain in the outside world before committing to drafts. On budget division, they reason from channel economics and goal fit—sometimes splitting evenly to compare two channels head-to-head, sometimes weighting heavily toward the channel whose format and audience match the goal while respecting each platform's minimum spend. And they treat planning as a conversation with the operator, bringing clear options whenever trade-offs appear."
+      "content": "How experienced performance marketers think: they read the whole board—goal, daily cap, currency, connected channels, audience depth, and landing page—before moving pieces. Instead of following rigid formulas, they weigh exploration against statistical power: when budget comfortably clears platform minimums, testing distinct audience or angle hypotheses in parallel reveals winners faster; when budget is tight, concentrating spend into a single high-conviction bet avoids starving every ad set in learning. Every dollar has a clear job, and total daily spend across all active cells stays within the operator's cap."
     },
     {
       "key": "26-case-studies-planning",
-      "title": "Experience: planning case studies",
+      "title": "Experience: planning, audience strategy, and budget allocation case studies",
       "category": "semantic",
       "tier": "detail",
       "tags": [
@@ -167,6 +185,7 @@
         "topic:budget",
         "topic:launch",
         "topic:research",
+        "tool:ads.plan",
         "tool:creative.draft_post",
         "tool:ads.create_campaign",
         "goal:no_campaign",
@@ -174,7 +193,7 @@
         "step:launch_campaign",
         "step:interpret_message"
       ],
-      "content": "Stories from practice: (Few-click momentum) An operator didn't want six back-and-forth turns to launch a dual-channel test. After research was accepted, the marketer drafted both the Reddit and Meta creative cards together in a single turn so the operator could review and approve them side-by-side, and once approved, raised both ads.create_campaign cards together in the next turn—keeping the whole flow to a few clicks while still letting the operator reply in chat anytime to override copy, budget split, or targeting. When the landing page had no validated images (u-images), the marketer didn't stall asking for files; they paired a concrete visualBrief on the Meta card and moved straight to approval so the operator could either approve as-is or drop a URL to override. (Creative inspiration) A marketer preparing a launch wanted fresh angles that didn't sound generic, so they browsed the web with web.search to see how similar products framed problems, what visual themes stood out in social feeds, and what hooks sparked discussion—then brought that inspiration back to pair with the verified facts and assets pulled from the client's own landing page via research.gather. (Platform-native creatives: Reddit vs. Meta) On a dual-channel launch, the marketer never cloned the Reddit post onto Meta. For the Reddit card they set plan.platform to \"reddit\" with a candid, practitioner-style text post tailored to specific communities; for the Meta card they set plan.platform to \"meta\" with a punchy sub-40-char headline, short feed primary text, a clear ctaType (such as LEARN_MORE or SIGN_UP), and a concrete visualBrief (or validated page imageUrl/videoUrl) so Facebook and Instagram users saw a visual-first ad rather than a wall of text. (Full campaign configuration from context) Rather than leaving campaign delivery settings to defaults, the marketer derived every lever from the brand, goal, and tracking state: targeting.geolocations from the target market (e.g. [\"GB\"]), objective (e.g. OUTCOME_TRAFFIC for visits or OUTCOME_AWARENESS for reach), optimizationGoal (LINK_CLICKS or LANDING_PAGE_VIEWS when no conversion pixel exists yet), billingEvent (IMPRESSIONS), ctaType matching what the landing page offers, and bidStrategy (LOWEST_COST_WITHOUT_CAP on a fresh launch before baseline CPC exists, or LOWEST_COST_WITH_BID_CAP / COST_CAP with bidAmount once benchmarks are known). (Tight budget across channels) Another campaign had Reddit and Meta connected on a £5/day total cap; a quick check on Reddit's minimum daily spend showed £5/day was the floor on Reddit alone while Meta could run at £1–5/day. Rather than letting a £2.50/£2.50 draft hit a wall at launch, the marketer talked through the math up front with the client: raise the cap to £7+/day (£5 Reddit + £2 Meta), run Reddit-only at £5/day, or test Meta-only at £2–5/day. (Splitting £10/day across two channels) With £10/day total across Reddit and Meta, the marketer proposed £5/day Reddit + £5/day Meta (so combined daily spend stayed at £10/day, not £10 each = £20/day), or explained why they weighted £10/day Meta + £5/day Reddit on a £15/day visual product launch."
+      "content": "Stories from practice: (Case 1 — Multi-hypothesis audience & budget split on £20/day) Promoting an applied-AI consultancy on £20/day (~£140/week), a marketer checked bounds with ads.plan and saw room for multiple test cells. Rather than pouring all £20/day into one broad audience or slicing into six £3 micro-cells that could never exit learning, they designed a clean portfolio within the £20/day cap: Cell 1 (£8/day Meta) targeted startup founders and SaaS interests (age 25–50 in GB) around speed-to-automation; Cell 2 (£7/day Meta) targeted operations & transformation interests around measurable ROI; and Cell 3 (£5/day Reddit) tested candid practitioner copy in r/SaaS and r/entrepreneur—totalling £20/day across all three so real CTR and CPC could crown a winner. (Case 2 — Concentrating a tight £5/day budget) On a £5/day goal, splitting into two £2.50 cells would violate Reddit's £5/day floor and starve Meta's delivery algorithm. The marketer kept 100% of the £5/day in one focused cell with the sharpest landing-page hook, noted what a second cell would test if budget expanded later, and launched cleanly. (Case 3 — Platform-native creative & full delivery levers) On dual-channel launches, the marketer never cloned Reddit copy onto Meta: Reddit received a specific, non-hype community post, while Meta received a visual-first 4:5 card with a sub-40-char headline, clear ctaType (LEARN_MORE/SIGN_UP), and explicit targeting (geolocations, interests/communities), objective, optimizationGoal, and LOWEST_COST_WITHOUT_CAP bidding."
     },
     {
       "key": "30-analytics",
@@ -200,7 +219,7 @@
         "step:review_performance",
         "topic:metrics"
       ],
-      "content": "In a campaign review you decide what to do and when to look again. Be realistic, not aggressive: give a change time to work and wait for enough clicks and spend before judging, unless something is urgent (an ad disapproved, spend running far ahead of plan, the budget nearly gone). Prefer small, reversible moves: lower the budget a little or pause a clear loser; never raise spend or launch from a review, that needs the operator. Judge against the approved plan (success metric and target). Record your note with analytics.review_campaign, or analytics.report_checkpoint on day 3, day 7 and at the end (target vs actual, continue / adjust / stop). Always give the next check time and the reason; Hub keeps it inside the operator's bounds."
+      "content": "In a campaign review you decide what to do and when to look again. When a goal runs multiple strategic cells (peerCampaigns in review context), compare each cell's CTR, CPC, spend pace, and delivery state side-by-side against the approved plan and sibling cells. Be realistic, not aggressive: give a cell time to exit learning and gather enough impressions/clicks before judging, unless something is urgent (an ad disapproved, spend running far ahead of plan, budget nearly gone). Once sample size is sufficient, pause a clear underperforming cell (change: {action: 'pause'}) or trim an inefficient cell's daily budget (change: {action: 'lower_budget', dailyBudget}) while keeping winning cells running; never raise spend or launch from a review, that needs the operator. Record your note with analytics.review_campaign, or analytics.report_checkpoint on day 3, day 7 and at the end (target vs actual, continue / adjust / stop). Always give the next check time and the reason; Hub keeps it inside the operator's bounds."
     },
     {
       "key": "32-creative-studio-and-asset-reuse",
@@ -228,6 +247,19 @@
         "step:plan_goal"
       ],
       "content": "Case 1 (Main-page Brand Truth wins): A developer tool had crisp product UI screenshots (img-1) on its landing page. Instead of generating synthetic art, the marketer used img-1 directly for Meta Feed and animated it into a 5s motion loop, keeping authenticity high and spend zero. Case 2 (Rejecting mediocre stock, escalating for quality): For an enterprise ops AI campaign, a free stock query ('office paperwork') returned generic smiling coworkers at laptops. Recognizing it would blend into the feed and fail to stop thumbs, the marketer discarded the stock option and used fal.ai (source: 'ai') for an out-of-the-box surreal editorial visual: a towering paper avalanche frozen mid-air beside a single glowing calm monolith — zero laptops, instant scroll-stop. Case 3 (Resource discipline): Never burn fal.ai before research is accepted or on clichés ('seed on desk next to laptop'); reserve AI generation for concepts that cannot be photographed."
+    },
+    {
+      "key": "34-case-studies-live-optimization",
+      "title": "Case studies: post-launch cell comparison and disciplined iteration",
+      "category": "semantic",
+      "tier": "detail",
+      "tags": [
+        "goal:has_campaign",
+        "step:review_performance",
+        "topic:metrics",
+        "topic:budget"
+      ],
+      "content": "Case 1 (Patience during early learning): Two hours after activating a two-cell Meta & Reddit test, Cell 1 showed 18 impressions / 0 clicks and Cell 2 was still in moderation review. Rather than prematurely pausing Cell 1 on noise, the reviewer logged 'wait', noted the tiny sample size and moderation status, and scheduled the next check 6 hours out. Case 2 (Pruning a laggard cell once signal emerges): By Day 3, Cell 1 (Founders pain-point) had 2,400 impressions, 58 clicks (2.42% CTR, £0.38 CPC) while Cell 2 (Broad ops) spent £19 for 6 clicks (0.29% CTR, £3.16 CPC). Comparing the sibling cells side-by-side, the reviewer kept Cell 1 untouched so its learning compounded and proposed pausing Cell 2 (change: {action: 'pause'}) to stop budget bleed. Case 3 (Urgent anomaly intervention): When a creative was rejected by platform moderation or spend paced 2x above expectation with zero outbound clicks, the reviewer acted immediately instead of waiting for Day 3."
     },
     {
       "key": "40-iteration",

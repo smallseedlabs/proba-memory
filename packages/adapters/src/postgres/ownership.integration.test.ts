@@ -183,9 +183,13 @@ describe('migration 0008: memory ownership', () => {
     await admin.query(`CREATE DATABASE ${name}`);
     const fresh = createPgPool(testDatabaseUrl().replace(/\/[^/]+$/, `/${name}`), 4);
     try {
-      // The database as it was before this change: every migration but 0008.
-      const before = await mkdtemp(join(tmpdir(), 'proba-migrations-'));
-      for (const f of readMigrations(DEFAULT_MIGRATIONS_DIR)) if (f.version !== '0008') await cp(join(DEFAULT_MIGRATIONS_DIR, f.name), join(before, f.name));
+      // The database as it was before migration 0008: migrations 0001..0007 only.
+      const before = await mkdtemp(join(tmpdir(), 'proba-migrations-before-'));
+      const upTo0008 = await mkdtemp(join(tmpdir(), 'proba-migrations-0008-'));
+      for (const f of readMigrations(DEFAULT_MIGRATIONS_DIR)) {
+        if (Number(f.version) < 8) await cp(join(DEFAULT_MIGRATIONS_DIR, f.name), join(before, f.name));
+        if (Number(f.version) <= 8) await cp(join(DEFAULT_MIGRATIONS_DIR, f.name), join(upTo0008, f.name));
+      }
       const first = await migrate({ pool: fresh, embeddingDimension: 16, dir: before });
       expect(first.applied.at(-1)).toMatch(/^0007_/);
       expect(await columns(fresh)).toEqual([]);
@@ -233,7 +237,7 @@ describe('migration 0008: memory ownership', () => {
       const longId = await insertMemory('from an actor id that is not a user id');
       await link(longId, await observe({ actor: { type: 'user', id: 'x'.repeat(200) } }));
 
-      const second = await migrate({ pool: fresh, embeddingDimension: 16 });
+      const second = await migrate({ pool: fresh, embeddingDimension: 16, dir: upTo0008 });
       expect(second.applied).toEqual(['0008_memory_ownership.sql']);
       expect(await columns(fresh)).toEqual(['owner_actor_id', 'visibility']);
       const owners = async (): Promise<Record<string, string | null>> =>
@@ -257,7 +261,7 @@ describe('migration 0008: memory ownership', () => {
       await fresh.query(file.sql);
       expect(await owners()).toEqual(expected);
       // Applying through the migrator twice is a no-op.
-      expect((await migrate({ pool: fresh, embeddingDimension: 16 })).applied).toEqual([]);
+      expect((await migrate({ pool: fresh, embeddingDimension: 16, dir: upTo0008 })).applied).toEqual([]);
 
       // The documented rollback removes both columns, the check and the index, and keeps the memories.
       await fresh.query(await readFile(join(DEFAULT_MIGRATIONS_DIR, 'rollback', '0008_memory_ownership.down.sql'), 'utf8'));
@@ -266,7 +270,7 @@ describe('migration 0008: memory ownership', () => {
       expect((await fresh.query("SELECT 1 FROM pg_indexes WHERE indexname = 'memories_workspace_owner_idx'")).rowCount).toBe(0);
       expect((await fresh.query('SELECT count(*)::int AS n FROM memories')).rows[0].n).toBe(Object.keys(expected).length);
       // ...and it can be applied again afterwards, with the same backfill.
-      expect((await migrate({ pool: fresh, embeddingDimension: 16 })).applied).toEqual(['0008_memory_ownership.sql']);
+      expect((await migrate({ pool: fresh, embeddingDimension: 16, dir: upTo0008 })).applied).toEqual(['0008_memory_ownership.sql']);
       expect(await owners()).toEqual(expected);
     } finally {
       await fresh.end();
